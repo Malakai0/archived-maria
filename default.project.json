@@ -1,0 +1,52 @@
+{
+    "name": "project-maria",
+    "tree": {
+        "$className": "DataModel",
+        "$ignoreUnknownInstances": true,
+
+        "ServerStorage": {
+            "$className": "ServerStorage",
+            "$ignoreUnknownInstances": true,
+
+            "Source": {
+                "$path": "src/ServerStorage"
+            }
+        },
+
+        "ServerScriptService": {
+            "$className": "ServerScriptService",
+            "$ignoreUnknownInstances": true,
+
+            "Source": {
+                "$path": "src/ServerScriptService"
+            }
+        },
+
+        "ReplicatedStorage": {
+            "$className": "ReplicatedStorage",
+            "$ignoreUnknownInstances": true,
+
+            "Source": {
+                "$path": "src/ReplicatedStorage"
+            },
+
+            "Packages": {
+                "$path": "Packages"
+            }
+        },
+
+        "StarterPlayer": {
+            "$className": "StarterPlayer",
+            "$ignoreUnknownInstances": true,
+
+            "StarterPlayerScripts":{
+                "$className": "StarterPlayerScripts",
+                "$ignoreUnknownInstances": true,
+
+                "Source": {
+                    "$path": "src/StarterPlayerScripts"
+                }
+            }
+        }
+    }
+}

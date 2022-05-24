@@ -3,9 +3,14 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
+local RETRACT_STEP = 1 / 300
 local MAX_GAS = 10000
 
+local MAX_BV_FORCE = Vector3.new(30000, 20000, 30000)
+local MAX_BG_TORQUE = Vector3.one * 100000000
+
 local InputManager = require(ReplicatedStorage.Source.Modules.InputManager)
+local PrioritizedIf = require(ReplicatedStorage.Source.Modules.PrioritizedIf)
 
 local Player = Players.LocalPlayer
 
@@ -22,13 +27,10 @@ local function SetupBodyMovers()
     BodyGyro.P = 500
     BodyGyro.D = 50
 
-    local BoostVelocity = BodyVelocity:Clone()
-
     BodyVelocity.Parent = RootPart
-    BoostVelocity.Parent = RootPart
     BodyGyro.Parent = RootPart
 
-    return BodyVelocity, BoostVelocity, BodyGyro
+    return BodyVelocity, BodyGyro
 end
 
 local ODM = {}
@@ -37,12 +39,13 @@ ODM.__index = ODM
 function ODM.new()
     local RootPart = Player.Character.PrimaryPart
 
-    local BodyVelocity, BoostVelocity, BodyGyro = SetupBodyMovers()
+    local BodyVelocity, BodyGyro = SetupBodyMovers()
 
     local self = {
+        Humanoid = Player.Character:WaitForChild("Humanoid"),
         Root = RootPart,
+
         BodyVelocity = BodyVelocity,
-        BoostVelocity = BoostVelocity,
         BodyGyro = BodyGyro,
 
         Boosting = false,
@@ -153,14 +156,23 @@ function ODM:SetHook(Hook, Target)
     end
 
     if not Target then
-        self.Hooking[Hook] = false
+        self.Hooking[Hook] = true
+
         self:_cleanupHookFX(Hook)
 
-        if not self.Hooks.Left and not self.Hooks.Right and self._connection then
-            self._connection:Disconnect()
+        task.delay(.2, function()
+            self.Hooking[Hook] = false
+        end)
+
+        if not self.Hooks.Left and not self.Hooks.Right then
+            self.Humanoid.PlatformStand = false
+
+            if self._connection then
+                self._connection:Disconnect()
+            end
         end
 
-        self:_setVelocity()
+        self:_applyPhysics()
 
         return
     end
@@ -185,14 +197,14 @@ function ODM:SetHook(Hook, Target)
         self.Hooks[Hook] = ActualHook.Attachment0
     end)
 
-    self:_setVelocity()
+    self:_applyPhysics()
 
     if not self._connection then
         return
     end
 
     self._connection = RunService.Heartbeat:Connect(function()
-        self:_updateVelocity()
+        self:_updatePhysics()
     end)
 end
 
@@ -206,13 +218,26 @@ function ODM:Boost(Target)
     --// TODO: Implement boosting
 end
 
-function ODM:_setVelocity()
+function ODM:_applyPhysics()
+    local BodyVelocity = self.BodyVelocity
+    local BodyGyro = self.BodyGyro
 
+    self.Humanoid.PlatformStand = true
+
+    local Physics = self:_calculatePhysics()
+
+    BodyVelocity.MaxForce = Physics.BV.MaxForce
+    BodyVelocity.Velocity = Physics.BV.Velocity
+
+    BodyGyro.MaxTorque = Physics.BG.MaxTorque
+    BodyGyro.CFrame = Physics.BG.CFrame
 end
 
-function ODM:_calculateVelocity()
+function ODM:_calculatePhysics()
     local TargetPosition = Vector3.zero
     local Speed = self.Properties.MaxSpeed * 4
+
+    local RootP = self.Root.Position
 
     local LeftPosition = if self.Hooks.Left then self.Hooks.Left.WorldPosition else nil
     local RightPosition = if self.Hooks.Right then self.Hooks.Right.WorldPosition else nil
@@ -223,23 +248,62 @@ function ODM:_calculateVelocity()
         TargetPosition = LeftPosition or RightPosition
     end
 
-    local Distance = (TargetPosition - self.Root.Position).Magnitude
+    local Distance = (TargetPosition - RootP).Magnitude
     if Distance < 10 then
         Speed *= Distance * 4
     end
 
-    local Multiplier = 0.02
-    if self.Boosting then
-        Multiplier = 0.1
-    end
+    local Multiplier = PrioritizedIf({ 0.02,
+        self._directionChange, .01,
+        self.Boosting, .1
+    })
 
+    local Direction = (TargetPosition - RootP).Unit
 
+    local Cross = Direction:Cross(Vector3.yAxis)
+    local Matrix = CFrame.fromMatrix(RootP, Cross, Cross:Cross(Direction))
+
+    local BodyVelocity = self.BodyVelocity
+
+    local MaxForce = BodyVelocity:Lerp(MAX_BV_FORCE, .1)
+    local MaxTorque = MAX_BG_TORQUE
+    local BGCFrame = Matrix
+    local Velocity = PrioritizedIf({
+        Vector3.zero,
+        self.DriftDirection == 0, BodyVelocity.Velocity:Lerp(Direction * Speed, Multiplier),
+        self.DriftDirection ~= 0, self:_calculateDriftingVelocity(BodyVelocity.Velocity, Matrix, TargetPosition, Speed, Multiplier),
+    })
+
+    return {
+        BV = {
+            MaxForce = MaxForce,
+            Velocity = Velocity
+        },
+
+        BG = {
+            MaxTorque = MaxTorque,
+            CFrame = BGCFrame
+        }
+    }
 end
 
-function ODM:_updateVelocity()
+function ODM:_calculateDriftingVelocity(BaseVelocity, Matrix, Target, Speed, Multiplier)
+    local RootP = self.Root.Position
+    local Drift = self.DriftDirection
+
+    local DriftCFrame = Matrix * CFrame.new(Drift, 0, 0)
+    local DirectionCFrame = CFrame.new(0, 0, -Speed + 1)
+
+    return BaseVelocity:Lerp(
+        CFrame.new(RootP, (CFrame.new(Target, DriftCFrame.Position) * DirectionCFrame).Position).LookVector * Speed,
+        Multiplier
+    )
+end
+
+function ODM:_updatePhysics()
     --// Only update function.
 
-    self:_setVelocity()
+    self:_applyPhysics()
 end
 
 function ODM:_createHookFX(Identifier, Origin, Destination)
@@ -247,8 +311,7 @@ function ODM:_createHookFX(Identifier, Origin, Destination)
 
     local Wire = Instance.new("Beam")
 
-    local OriginA, DestinationA = self:_createAttachment(Identifier),
-                                                    self:_createAttachment(Identifier)
+    local OriginA, DestinationA = self:_createAttachment(Identifier), self:_createAttachment(Identifier)
 
     self:_configureAttachment(OriginA, self.Root, Origin)
     self:_configureAttachment(DestinationA, workspace.Terrain, Destination)
@@ -283,7 +346,19 @@ function ODM:_retractHookFX(Identifier)
         return
     end
 
+    local OriginA, DestinationA = Wire.Attachment0, Wire.Attachment1
 
+    task.spawn(function()
+        for i = 0, 1, 0.03 do
+            local Inversed = 1 - i
+            Wire.CurveSize0 = self._rng:NextNumber(-10, 10) * Inversed
+            Wire.CurveSize1 = self._rng:NextNumber(-10, 10) * Inversed
+
+            DestinationA.WorldPosition = DestinationA.WorldPosition:Lerp(OriginA.WorldPosition, i)
+
+            task.wait(RETRACT_STEP)
+        end
+    end)
 end
 
 function ODM:_cleanupHookFX(Identifier)

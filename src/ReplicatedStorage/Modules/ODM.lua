@@ -1,13 +1,17 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 
+local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
 local RETRACT_STEP = 1 / 300
 local MAX_GAS = 10000
 
 local MAX_BV_FORCE = Vector3.new(30000, 20000, 30000)
 local MAX_BG_TORQUE = Vector3.one * 100000000
+
+local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local InputManager = require(ReplicatedStorage.Source.Modules.InputManager)
 local PrioritizedIf = require(ReplicatedStorage.Source.Modules.PrioritizedIf)
@@ -15,7 +19,7 @@ local PrioritizedIf = require(ReplicatedStorage.Source.Modules.PrioritizedIf)
 local Player = Players.LocalPlayer
 
 local function SetupBodyMovers()
-    local RootPart = Player.Character.PrimaryPart
+    local RootPart = Player.Character.HumanoidRootPart
 
     local BodyVelocity = Instance.new("BodyVelocity")
     BodyVelocity.MaxForce = Vector3.zero
@@ -36,14 +40,18 @@ end
 local ODM = {}
 ODM.__index = ODM
 
-function ODM.new()
-    local RootPart = Player.Character.PrimaryPart
+function ODM.new(ODMRig, Mass)
+    local RootPart = Player.Character:WaitForChild("HumanoidRootPart")
 
     local BodyVelocity, BodyGyro = SetupBodyMovers()
 
     local self = {
         Humanoid = Player.Character:WaitForChild("Humanoid"),
         Root = RootPart,
+
+        Rig = ODMRig,
+        Main = ODMRig.MainRig.Main,
+        Mass = Mass,
 
         BodyVelocity = BodyVelocity,
         BodyGyro = BodyGyro,
@@ -66,20 +74,23 @@ function ODM.new()
 
         Properties = {
             Speed = 0,
-            MaxSpeed = 0,
-            HookRange = 500 --// Change to a constant??
+            MaxSpeed = 60,
+            HookRange = 300 --// Change to a constant??
         },
 
+        _targetFOV = workspace.CurrentCamera.FieldOfView,
+        _hookTargets = {},
         _fx = {},
         _rng = Random.new(),
         _inputManager = InputManager.new(),
+        _cameraController = Knit.GetController("CameraController"),
     }
 
     setmetatable(self, ODM)
 
     self._inputManager:AddKeybind("HookLeft", Enum.KeyCode.Q)
     self._inputManager:AddKeybind("HookRight", Enum.KeyCode.E)
-    self._inputManager:AddKeybind("Boost", Enum.KeyCode.LeftShift)
+    self._inputManager:AddKeybind("Boost", Enum.KeyCode.Space)
 
     self._inputManager:AddKeybind("DriftLeft", Enum.KeyCode.A)
     self._inputManager:AddKeybind("DriftRight", Enum.KeyCode.D)
@@ -91,6 +102,11 @@ end
 
 function ODM:Initialize()
     self:InitializeControls()
+    self.Humanoid.CameraOffset = Vector3.yAxis * 2
+
+    RunService:BindToRenderStep("ODMCamera", Enum.RenderPriority.Camera.Value, function()
+        self:_cameraEffect()
+    end)
 end
 
 function ODM:InitializeControls()
@@ -113,15 +129,15 @@ function ODM:InitializeControls()
     end)
 
     self._inputManager:BindAction("DriftLeft", function()
-        self:Drift(1)
-    end, function()
         self:Drift(-1)
+    end, function()
+        self:Drift(1)
     end)
 
     self._inputManager:BindAction("DriftRight", function()
-        self:Drift(-1)
-    end, function()
         self:Drift(1)
+    end, function()
+        self:Drift(-1)
     end)
 end
 
@@ -147,37 +163,60 @@ function ODM:Drift(DirectionOffset)
 end
 
 function ODM:CanHook(Hook)
-    return self.Equipment.Gas > 0 and not self.Hooking[Hook]
+    return self.Equipment.Gas > 0
 end
 
 function ODM:SetHook(Hook, Target)
-    if not ODM:CanHook(Hook) then
-        return
-    end
+    self._hookTargets[Hook] = Target
 
     if not Target then
         self.Hooking[Hook] = true
 
-        self:_cleanupHookFX(Hook)
+        self:_retractHookFX(Hook)
+        self.Hooks[Hook] = nil
 
-        task.delay(.2, function()
-            self.Hooking[Hook] = false
-        end)
+        local AnyHooks = self.Hooks.Left or self.Hooks.Right
 
-        if not self.Hooks.Left and not self.Hooks.Right then
-            self.Humanoid.PlatformStand = false
+        if self._connection and not AnyHooks then
+            self._connection:Disconnect()
+            self._connection = nil
 
-            if self._connection then
-                self._connection:Disconnect()
-            end
+            self:Boost(false)
+            self:_boostEffect(false)
         end
 
-        self:_applyPhysics()
+        task.delay(.2, function()
+            if self._hookTargets[Hook] then
+                return
+            end
+
+            self.Hooking[Hook] = false
+            self:_cleanupHookFX(Hook)
+
+            if not (self.Hooks.Left or self.Hooks.Right) then
+                self.Humanoid.PlatformStand = false
+
+                for _, Part in pairs(Player.Character:GetDescendants()) do
+                    if Part:IsA("BasePart") then
+                        Part.Massless = false
+                    end
+                end
+
+                self.Mass.Massless = true
+
+                self.BodyVelocity.MaxForce = Vector3.zero
+                self.BodyVelocity.Velocity = Vector3.zero
+
+                self.BodyGyro.MaxTorque = Vector3.zero
+                self.BodyGyro.CFrame = CFrame.new()
+                self._cameraController:UpdateDirection(0)
+            end
+        end)
 
         return
     end
 
-    local HookPosition, HookDistance = self:_getHookTarget()
+    local HookPosition = self:_getHookTarget()
     if not HookPosition then
         return
     end
@@ -186,25 +225,35 @@ function ODM:SetHook(Hook, Target)
     self.Equipment.Gas -= 1 --// Initial cost of hooking
 
     self:Boost(false)
+    self:_boostEffect(false)
 
     if not (self.Hooks.Left or self.Hooks.Right) then
         self.BodyVelocity.MaxForce = Vector3.zero
     end
 
-    local ActualHook = self:_createHookFX(Hook, self.Root.Position, HookPosition)
-    task.delay(HookDistance / 750, function()
+    local ActualHook = self:_createHookFX(Hook, HookPosition)
+    task.delay(.1, function()
         self.Hooking[Hook] = false
-        self.Hooks[Hook] = ActualHook.Attachment0
-    end)
+        self.Hooks[Hook] = ActualHook.Attachment1
 
-    self:_applyPhysics()
+        if self._connection then
+            return
+        end
 
-    if not self._connection then
-        return
-    end
+        if not self._hookTargets[Hook] then
+            return
+        end
 
-    self._connection = RunService.Heartbeat:Connect(function()
-        self:_updatePhysics()
+        for _, Part in pairs(Player.Character:GetDescendants()) do
+            if Part:IsA("BasePart") then
+                Part.Massless = true
+            end
+        end
+        self.Mass.Massless = false
+
+        self._connection = RunService.Heartbeat:Connect(function()
+            self:_applyPhysics()
+        end)
     end)
 end
 
@@ -214,8 +263,6 @@ function ODM:Boost(Target)
     end
 
     self.Boosting = Target
-
-    --// TODO: Implement boosting
 end
 
 function ODM:_applyPhysics()
@@ -226,11 +273,18 @@ function ODM:_applyPhysics()
 
     local Physics = self:_calculatePhysics()
 
+    self._cameraController:UpdateDirection(self.DriftDirection)
+
+    self:_cameraEffect()
+    self:_boostEffect(self.Boosting)
+
     BodyVelocity.MaxForce = Physics.BV.MaxForce
     BodyVelocity.Velocity = Physics.BV.Velocity
 
     BodyGyro.MaxTorque = Physics.BG.MaxTorque
     BodyGyro.CFrame = Physics.BG.CFrame
+
+    self.Speed = BodyVelocity.Velocity.Magnitude
 end
 
 function ODM:_calculatePhysics()
@@ -248,31 +302,35 @@ function ODM:_calculatePhysics()
         TargetPosition = LeftPosition or RightPosition
     end
 
-    local Distance = (TargetPosition - RootP).Magnitude
+    local Difference = TargetPosition - RootP
+
+    local Distance = Difference.Magnitude
+    local Direction = Difference.Unit
+
     if Distance < 10 then
-        Speed *= Distance * 4
+        Speed = Distance * 4
     end
 
     local Multiplier = PrioritizedIf({ 0.02,
-        self._directionChange, .01,
-        self.Boosting, .1
+        self._directionChange ~= nil, .02,
+        self.Boosting == true, .1
     })
-
-    local Direction = (TargetPosition - RootP).Unit
 
     local Cross = Direction:Cross(Vector3.yAxis)
     local Matrix = CFrame.fromMatrix(RootP, Cross, Cross:Cross(Direction))
 
     local BodyVelocity = self.BodyVelocity
 
-    local MaxForce = BodyVelocity:Lerp(MAX_BV_FORCE, .1)
-    local MaxTorque = MAX_BG_TORQUE
-    local BGCFrame = Matrix
-    local Velocity = PrioritizedIf({
-        Vector3.zero,
-        self.DriftDirection == 0, BodyVelocity.Velocity:Lerp(Direction * Speed, Multiplier),
-        self.DriftDirection ~= 0, self:_calculateDriftingVelocity(BodyVelocity.Velocity, Matrix, TargetPosition, Speed, Multiplier),
-    })
+    local MaxForce = BodyVelocity.MaxForce:Lerp(MAX_BV_FORCE, .1)
+    local Velocity
+
+    if self.DriftDirection == 0 then
+        Velocity = BodyVelocity.Velocity:Lerp(Direction * Speed, Multiplier)
+    else
+        Velocity = self:_calculateDriftingVelocity(
+            BodyVelocity.Velocity, Matrix, TargetPosition, Distance, Speed, Multiplier
+        )
+    end
 
     return {
         BV = {
@@ -281,57 +339,91 @@ function ODM:_calculatePhysics()
         },
 
         BG = {
-            MaxTorque = MaxTorque,
-            CFrame = BGCFrame
+            MaxTorque = MAX_BG_TORQUE,
+            CFrame = Matrix
         }
     }
 end
 
-function ODM:_calculateDriftingVelocity(BaseVelocity, Matrix, Target, Speed, Multiplier)
+function ODM:_boostEffect(Active)
+    self.Main.Trail.Enabled = Active
+
+    for _, Particle in pairs(self.Main.GasEjection:GetChildren()) do
+        Particle.Enabled = Active
+    end
+end
+
+function ODM:_cameraEffect()
+    local Camera = workspace.CurrentCamera
+
+    local Velocity = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
+    local TargetFOV = math.min(math.floor(70 + 30 * Velocity), 110)
+
+    if self._targetFOV ~= TargetFOV then
+        self._targetFOV = TargetFOV
+        TweenService:Create(Camera, FOV_TWEEN, {
+            FieldOfView = TargetFOV
+        }):Play()
+    end
+
+    if self.Boosting then
+        local CAMERA_OFFSET = 0.075
+        local RX = self._rng:NextNumber(-CAMERA_OFFSET, CAMERA_OFFSET)
+        local RY = self._rng:NextNumber(-CAMERA_OFFSET, CAMERA_OFFSET)
+        local RZ = self._rng:NextNumber(-CAMERA_OFFSET, CAMERA_OFFSET)
+
+        local Target = Camera.CFrame:Lerp(Camera.CFrame * CFrame.new(RX,RY,RZ), 0.8)
+        local Offset = Camera.CFrame:ToObjectSpace(Target)
+
+        self.Humanoid.CameraOffset = Offset.Position + (Vector3.yAxis * 2)
+    end
+end
+
+function ODM:_calculateDriftingVelocity(BaseVelocity, Matrix, Target, Distance, Speed, Multiplier)
     local RootP = self.Root.Position
     local Drift = self.DriftDirection
 
-    local DriftCFrame = Matrix * CFrame.new(Drift, 0, 0)
-    local DirectionCFrame = CFrame.new(0, 0, -Speed + 1)
+    local DriftCFrame = CFrame.new(Drift, 0, 0)
+    local DirectionCFrame = CFrame.new(0, 0, -Distance + 1)
+
+    local Facing = CFrame.new(Target, (Matrix * DriftCFrame).Position) * DirectionCFrame
 
     return BaseVelocity:Lerp(
-        CFrame.new(RootP, (CFrame.new(Target, DriftCFrame.Position) * DirectionCFrame).Position).LookVector * Speed,
+        CFrame.new(RootP, Facing.Position).LookVector * Speed,
         Multiplier
     )
 end
 
-function ODM:_updatePhysics()
-    --// Only update function.
-
-    self:_applyPhysics()
-end
-
-function ODM:_createHookFX(Identifier, Origin, Destination)
+function ODM:_createHookFX(Identifier, Destination)
     self:_cleanupHookFX(Identifier)
 
-    local Wire = Instance.new("Beam")
+    local OriginA = self.Main:FindFirstChild(Identifier .. "Hook")
+    local Wire = self.Main:FindFirstChild(Identifier .. "Wire")
 
-    local OriginA, DestinationA = self:_createAttachment(Identifier), self:_createAttachment(Identifier)
+    local DestinationA = self:_createAttachment(Identifier)
 
-    self:_configureAttachment(OriginA, self.Root, Origin)
     self:_configureAttachment(DestinationA, workspace.Terrain, Destination)
     --// TODO: Replicate
 
     Wire.Attachment0 = OriginA
     Wire.Attachment1 = DestinationA
 
-    Wire.Parent = self.Root
-
     task.spawn(function()
+        Wire.Enabled = true
+
         for i = 0, 1, 0.1 do
+            if not (OriginA and DestinationA and self._hookTargets[Identifier]) then
+                break
+            end
+
             local Inversed = 1 - i
 
-            Wire.CurveSize0 = self._rng:NextNumber(-10, 10) * Inversed
-            Wire.CurveSize1 = self._rng:NextNumber(-10, 10) * Inversed
+            Wire.CurveSize0 = self._rng:NextNumber(-3, 3) * Inversed
+            Wire.CurveSize1 = self._rng:NextNumber(-3, 3) * Inversed
 
-            DestinationA.WorldPosition = DestinationA.WorldPosition:Lerp(OriginA, i)
+            DestinationA.WorldPosition = OriginA.WorldPosition:Lerp(Destination, i)
 
-            task.wait()
+            task.wait(RETRACT_STEP)
         end
     end)
 
@@ -350,9 +442,13 @@ function ODM:_retractHookFX(Identifier)
 
     task.spawn(function()
         for i = 0, 1, 0.03 do
+            if not (OriginA and DestinationA) or self._hookTargets[Identifier] then
+                break
+            end
+
             local Inversed = 1 - i
-            Wire.CurveSize0 = self._rng:NextNumber(-10, 10) * Inversed
-            Wire.CurveSize1 = self._rng:NextNumber(-10, 10) * Inversed
+            Wire.CurveSize0 = self._rng:NextNumber(-3, 3) * Inversed
+            Wire.CurveSize1 = self._rng:NextNumber(-3, 3) * Inversed
 
             DestinationA.WorldPosition = DestinationA.WorldPosition:Lerp(OriginA.WorldPosition, i)
 
@@ -368,9 +464,11 @@ function ODM:_cleanupHookFX(Identifier)
         return
     end
 
-    Wire.Attachment0:Destroy()
-    Wire.Attachment1:Destroy()
-    Wire:Destroy()
+    if Wire.Attachment1 then
+        Wire.Attachment1:Destroy()
+    end
+
+    Wire.Enabled = false
 end
 
 function ODM:_createAttachment(Name)
@@ -386,7 +484,7 @@ end
 
 function ODM:_getHookTarget()
     local Origin = Player.Character.PrimaryPart.Position
-    local Target = Player:GetMouse().Hit
+    local Target = Player:GetMouse().Hit.Position
 
     local Parameters = RaycastParams.new()
     Parameters.IgnoreWater = true
@@ -396,14 +494,27 @@ function ODM:_getHookTarget()
     local Direction = (Target - Origin).Unit * self.Properties.HookRange
     local Result = workspace:Raycast(Origin, Direction, Parameters)
 
-    local Position = if Result then Result.Position else nil
-    local Distance = if Result then (Result.Position - Origin).Magnitude else nil
-
-    return Position, Distance
+    return if Result then Result.Position else nil
 end
 
 function ODM:Destroy()
     self._inputManager:Destroy()
+    self.Rig:Destroy()
+
+    RunService:UnbindFromRenderStep("ODMCamera")
+
+    self:_cleanupHookFX("Left")
+    self:_cleanupHookFX("Right")
+
+    self.BodyVelocity:Destroy()
+    self.BodyGyro:Destroy()
+
+    if self.Humanoid then
+        self.Humanoid.PlatformStand = false
+    end
+
+    setmetatable(self, nil)
+    self = nil
 end
 
 return ODM

@@ -1,5 +1,5 @@
 return function(switches)
-    for i = 2, #switches do
+    for i = 2, #switches, 2 do
         local key, value = switches[i], switches[i + 1]
         if key then
             if type(value) ~= "function" then

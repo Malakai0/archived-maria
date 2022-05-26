@@ -27,7 +27,7 @@ local ODMRig = ReplicatedStorage.Objects.ODM.Default
 function ODMController:SetupCharacter(Character)
     local Root = Character:WaitForChild("HumanoidRootPart")
 
-    local Rig = ODMRig:Clone()
+    local Rig = ODMRig.MainRig:Clone()
     local Mass = CreateMass()
 
     RigHelper.WeldToCharacter(Rig, Character)
@@ -39,21 +39,19 @@ function ODMController:SetupCharacter(Character)
     Mass.Parent = Character
     Rig.Parent = Root
 
-    return Rig, Mass
+    return Rig, ODMRig.LeftWeapon, ODMRig.RightWeapon, Mass
 end
 
 function ODMController:Spawned()
     local Character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
 
-    local Rig, Mass = self:SetupCharacter(Character)
-    Rig.LeftWeapon.Parent = nil
-    Rig.RightWeapon.Parent = nil
+    local Rig, LeftWeapon, RightWeapon, Mass = self:SetupCharacter(Character)
 
     if self._currentODM and self._currentODM.Destroy then
         self._currentODM:Destroy()
     end
 
-    self._currentODM = ODM.new(Rig, Mass)
+    self._currentODM = ODM.new(Rig, LeftWeapon, RightWeapon, Mass)
 
     Character.Humanoid.Died:Connect(function()
         self._currentODM:Destroy()

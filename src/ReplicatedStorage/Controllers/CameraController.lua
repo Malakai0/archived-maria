@@ -6,13 +6,13 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 local Camera = require(ReplicatedStorage.Source.Modules.Camera)
 
 local CameraController = Knit.CreateController({
-    Name = "CameraController"
+    Name = "CameraController",
+    Camera = Camera
 })
 
 local Delta = 0
 
 function CameraController:Update(dt)
-    Delta = dt
     Camera.Update(workspace.CurrentCamera, Players.LocalPlayer.Character, dt)
 end
 
@@ -24,7 +24,8 @@ function CameraController:KnitStart()
     Camera.Setup(Players.LocalPlayer:GetMouse())
 
     RunService:BindToRenderStep("CameraController", Enum.RenderPriority.Camera.Value, function(dt)
-        self:Update(Delta)
+        Delta = dt
+        self:Update(dt)
     end)
 end
 

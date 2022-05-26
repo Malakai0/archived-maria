@@ -5,9 +5,20 @@ local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 
 local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-local RETRACT_STEP = 1 / 300
-local MAX_GAS = 10000
+local CAMERA_SHAKE_OFFSET = 0.075
+local CAMERA_OFFSET = Vector3.yAxis * 2
 
+local HOOK_SPREAD = 3
+local HOOK_HALT = 1 / 300
+local HOOK_STEPS = 1 / 30
+local HOOK_LENGTH = HOOK_HALT * (1 / HOOK_STEPS)
+
+local BLADES_PER_ARM = 4
+
+local RUN_SPEED = 28
+local WALK_SPEED = 11
+
+local MAX_GAS = 10000
 local MAX_BV_FORCE = Vector3.new(30000, 20000, 30000)
 local MAX_BG_TORQUE = Vector3.one * 100000000
 
@@ -15,8 +26,14 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local InputManager = require(ReplicatedStorage.Source.Modules.InputManager)
 local PrioritizedIf = require(ReplicatedStorage.Source.Modules.PrioritizedIf)
+local EmbeddedIf = require(ReplicatedStorage.Source.Modules.EmbeddedIf)
+local RigHelper = require(ReplicatedStorage.Source.Modules.RigHelper)
 
 local Player = Players.LocalPlayer
+
+local function Lerp(a, b, t)
+    return (1 - t) * a + t * b
+end
 
 local function SetupBodyMovers()
     local RootPart = Player.Character.HumanoidRootPart
@@ -40,22 +57,29 @@ end
 local ODM = {}
 ODM.__index = ODM
 
-function ODM.new(ODMRig, Mass)
+function ODM.new(ODMRig, LeftWeapon, RightWeapon, Mass)
     local RootPart = Player.Character:WaitForChild("HumanoidRootPart")
 
     local BodyVelocity, BodyGyro = SetupBodyMovers()
 
     local self = {
+        Character = Player.Character,
         Humanoid = Player.Character:WaitForChild("Humanoid"),
         Root = RootPart,
 
         Rig = ODMRig,
-        Main = ODMRig.MainRig.Main,
+        Main = ODMRig.Main,
         Mass = Mass,
+
+        LeftWeapon = LeftWeapon,
+        RightWeapon = RightWeapon,
 
         BodyVelocity = BodyVelocity,
         BodyGyro = BodyGyro,
 
+        Holding = false,
+        Equipped = false,
+        Sprinting = false,
         Boosting = false,
         DriftDirection = 0,
 
@@ -67,7 +91,7 @@ function ODM.new(ODMRig, Mass)
         },
 
         Equipment = {
-            Blades = 0,
+            Blades = BLADES_PER_ARM,
             Durability = 0,
             Gas = MAX_GAS
         },
@@ -88,12 +112,19 @@ function ODM.new(ODMRig, Mass)
 
     setmetatable(self, ODM)
 
+    self._inputManager:AddKeybind("Equip", Enum.KeyCode.One)
+    self._inputManager:AddKeybind("Hold", Enum.KeyCode.R)
+
     self._inputManager:AddKeybind("HookLeft", Enum.KeyCode.Q)
     self._inputManager:AddKeybind("HookRight", Enum.KeyCode.E)
     self._inputManager:AddKeybind("Boost", Enum.KeyCode.Space)
 
     self._inputManager:AddKeybind("DriftLeft", Enum.KeyCode.A)
     self._inputManager:AddKeybind("DriftRight", Enum.KeyCode.D)
+
+    self._inputManager:AddKeybind("Sprint", Enum.KeyCode.LeftShift)
+
+    self._inputManager:SetObject(self)
 
     self:Initialize()
 
@@ -102,43 +133,87 @@ end
 
 function ODM:Initialize()
     self:InitializeControls()
-    self.Humanoid.CameraOffset = Vector3.yAxis * 2
+    self.Humanoid.CameraOffset = CAMERA_OFFSET
+    self.Humanoid.WalkSpeed = WALK_SPEED
 
-    RunService:BindToRenderStep("ODMCamera", Enum.RenderPriority.Camera.Value, function()
-        self:_cameraEffect()
+    RunService:BindToRenderStep("ODMUpdate", Enum.RenderPriority.Camera.Value, function(dt)
+        self:_update(dt)
     end)
 end
 
 function ODM:InitializeControls()
-    self._inputManager:BindAction("HookLeft", function()
-        self:SetHook("Left", true)
-    end, function()
-        self:SetHook("Left", false)
-    end)
+    local ToggleID = self._inputManager.ToggleID
 
-    self._inputManager:BindAction("HookRight", function()
-        self:SetHook("Right", true)
-    end, function()
-        self:SetHook("Right", false)
-    end)
+    self._inputManager:BindActionToMethod("Sprint", "Sprint", {ToggleID})
+    self._inputManager:BindActionToMethod("Boost", "Boost", {ToggleID})
+    self._inputManager:BindActionToMethod("HookLeft", "Hook", {"Left", ToggleID})
+    self._inputManager:BindActionToMethod("HookRight", "Hook", {"Right", ToggleID})
+    self._inputManager:BindActionToMethod("DriftLeft", "Drift", {EmbeddedIf(-1, 1)})
+    self._inputManager:BindActionToMethod("DriftRight", "Drift", {EmbeddedIf(1, -1)})
+    self._inputManager:BindActionToMethod("Equip", "Equip", {ToggleID})
+    self._inputManager:BindActionToMethod("Hold", "Hold", {ToggleID})
+end
 
-    self._inputManager:BindAction("Boost", function()
-        self:Boost(true)
-    end, function()
-        self:Boost(false)
-    end)
+function ODM:Hold(Toggle)
+    if not Toggle then
+        return
+    end
 
-    self._inputManager:BindAction("DriftLeft", function()
-        self:Drift(-1)
-    end, function()
-        self:Drift(1)
-    end)
+    if not self.Equipped then
+        return
+    end
 
-    self._inputManager:BindAction("DriftRight", function()
-        self:Drift(1)
-    end, function()
-        self:Drift(-1)
-    end)
+    local Target = not self.Holding
+
+    local Handles = self.Rig.Handles
+    local Blades = self.Rig.Blades
+    local BladeAmount = self.Equipment.Blades
+
+    if Target and BladeAmount > 0 then
+        local Divisible = BladeAmount % BLADES_PER_ARM == 0
+        local BladeIndex = if Divisible then BLADES_PER_ARM else BladeAmount % BLADES_PER_ARM
+        local LeftBlade = Blades.Left:FindFirstChild(BladeIndex)
+        local RightBlade = Blades.Right:FindFirstChild(BladeIndex)
+
+        LeftBlade.Transparency, RightBlade.Transparency = 0, 0
+
+        RigHelper.WeldBladeToHandle("Left", self.Rig, LeftBlade)
+        RigHelper.WeldBladeToHandle("Right", self.Rig, RightBlade)
+
+        self.Equipment.Blades -= 1
+        self.Holding = true
+    elseif not Target then
+        local LeftBlade = RigHelper.UnweldBladeToHandle(self.Rig, Handles.Left)
+        local RightBlade = RigHelper.UnweldBladeToHandle(self.Rig, Handles.Right)
+
+        LeftBlade.Transparency, RightBlade.Transparency = 1, 1
+
+        self.Holding = false
+    end
+
+    --// TODO: Hold animation
+end
+
+function ODM:Equip(Target)
+    if not Target then
+        return
+    end
+
+    self.Equipped = not self.Equipped
+
+    if self.Equipped then
+        RigHelper.WeldHandleToArm("Left", self.Rig, self.Character:FindFirstChild("Left Arm"))
+        RigHelper.WeldHandleToArm("Right", self.Rig, self.Character:FindFirstChild("Right Arm"))
+    else
+        RigHelper.WeldHandleToRig("Left", self.Rig, self.Character:FindFirstChild("Left Arm"))
+        RigHelper.WeldHandleToRig("Right", self.Rig, self.Character:FindFirstChild("Right Arm"))
+    end
+
+    --// TODO: Add equipment animations
+end
+
+function ODM:Sprint(Target)
+    self.Sprinting = Target
 end
 
 function ODM:Drift(DirectionOffset)
@@ -162,11 +237,11 @@ function ODM:Drift(DirectionOffset)
     end
 end
 
-function ODM:CanHook(Hook)
+function ODM:CanHook()
     return self.Equipment.Gas > 0
 end
 
-function ODM:SetHook(Hook, Target)
+function ODM:Hook(Hook, Target)
     self._hookTargets[Hook] = Target
 
     if not Target then
@@ -185,7 +260,7 @@ function ODM:SetHook(Hook, Target)
             self:_boostEffect(false)
         end
 
-        task.delay(.2, function()
+        task.delay(HOOK_LENGTH * 2, function()
             if self._hookTargets[Hook] then
                 return
             end
@@ -209,10 +284,13 @@ function ODM:SetHook(Hook, Target)
 
                 self.BodyGyro.MaxTorque = Vector3.zero
                 self.BodyGyro.CFrame = CFrame.new()
-                self._cameraController:UpdateDirection(0)
             end
         end)
 
+        return
+    end
+
+    if not self:CanHook() then
         return
     end
 
@@ -232,7 +310,7 @@ function ODM:SetHook(Hook, Target)
     end
 
     local ActualHook = self:_createHookFX(Hook, HookPosition)
-    task.delay(.1, function()
+    task.delay(HOOK_LENGTH, function()
         self.Hooking[Hook] = false
         self.Hooks[Hook] = ActualHook.Attachment1
 
@@ -251,8 +329,8 @@ function ODM:SetHook(Hook, Target)
         end
         self.Mass.Massless = false
 
-        self._connection = RunService.Heartbeat:Connect(function()
-            self:_applyPhysics()
+        self._connection = RunService.Heartbeat:Connect(function(dt)
+            self:_applyPhysics(dt)
         end)
     end)
 end
@@ -262,10 +340,14 @@ function ODM:Boost(Target)
         return
     end
 
+    if self.Equipment.Gas <= 0 then
+        return
+    end
+
     self.Boosting = Target
 end
 
-function ODM:_applyPhysics()
+function ODM:_applyPhysics(dt)
     local BodyVelocity = self.BodyVelocity
     local BodyGyro = self.BodyGyro
 
@@ -275,7 +357,7 @@ function ODM:_applyPhysics()
 
     self._cameraController:UpdateDirection(self.DriftDirection)
 
-    self:_cameraEffect()
+    self:_update(dt)
     self:_boostEffect(self.Boosting)
 
     BodyVelocity.MaxForce = Physics.BV.MaxForce
@@ -353,11 +435,15 @@ function ODM:_boostEffect(Active)
     end
 end
 
-function ODM:_cameraEffect()
+function ODM:_update(dt)
     local Camera = workspace.CurrentCamera
 
     local Velocity = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
     local TargetFOV = math.min(math.floor(70 + 30 * Velocity), 110)
+
+    if not (self._hookTargets.Left or self._hookTargets.Right) then
+        self._cameraController:UpdateDirection(0)
+    end
 
     if self._targetFOV ~= TargetFOV then
         self._targetFOV = TargetFOV
@@ -366,16 +452,18 @@ function ODM:_cameraEffect()
         }):Play()
     end
 
-    if self.Boosting then
-        local CAMERA_OFFSET = 0.075
-        local RX = self._rng:NextNumber(-CAMERA_OFFSET, CAMERA_OFFSET)
-        local RY = self._rng:NextNumber(-CAMERA_OFFSET, CAMERA_OFFSET)
-        local RZ = self._rng:NextNumber(-CAMERA_OFFSET, CAMERA_OFFSET)
+    local WalkSpeedTarget = if self.Sprinting then RUN_SPEED else WALK_SPEED
+    self.Humanoid.WalkSpeed = Lerp(self.Humanoid.WalkSpeed, WalkSpeedTarget, 6 * dt)
 
-        local Target = Camera.CFrame:Lerp(Camera.CFrame * CFrame.new(RX,RY,RZ), 0.8)
+    if self.Boosting then
+        local RX = self._rng:NextNumber(-CAMERA_SHAKE_OFFSET, CAMERA_SHAKE_OFFSET)
+        local RY = self._rng:NextNumber(-CAMERA_SHAKE_OFFSET, CAMERA_SHAKE_OFFSET)
+        local RZ = self._rng:NextNumber(-CAMERA_SHAKE_OFFSET, CAMERA_SHAKE_OFFSET)
+
+        local Target = Camera.CFrame:Lerp(Camera.CFrame * CFrame.new(RX,RY,RZ), 48 * dt)
         local Offset = Camera.CFrame:ToObjectSpace(Target)
 
-        self.Humanoid.CameraOffset = Offset.Position + (Vector3.yAxis * 2)
+        self.Humanoid.CameraOffset = Offset.Position + CAMERA_OFFSET
     end
 end
 
@@ -411,19 +499,19 @@ function ODM:_createHookFX(Identifier, Destination)
     task.spawn(function()
         Wire.Enabled = true
 
-        for i = 0, 1, 0.1 do
+        for i = 0, 1, HOOK_STEPS do
             if not (OriginA and DestinationA and self._hookTargets[Identifier]) then
                 break
             end
 
             local Inversed = 1 - i
 
-            Wire.CurveSize0 = self._rng:NextNumber(-3, 3) * Inversed
-            Wire.CurveSize1 = self._rng:NextNumber(-3, 3) * Inversed
+            Wire.CurveSize0 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
+            Wire.CurveSize1 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
 
             DestinationA.WorldPosition = OriginA.WorldPosition:Lerp(Destination, i)
 
-            task.wait(RETRACT_STEP)
+            task.wait(HOOK_HALT)
         end
     end)
 
@@ -439,20 +527,25 @@ function ODM:_retractHookFX(Identifier)
     end
 
     local OriginA, DestinationA = Wire.Attachment0, Wire.Attachment1
+    if not (OriginA and DestinationA) then
+        return
+    end
+
+    local OriginalPosition = DestinationA.WorldPosition
 
     task.spawn(function()
-        for i = 0, 1, 0.03 do
+        for i = 0, 1, HOOK_STEPS do
             if not (OriginA and DestinationA) or self._hookTargets[Identifier] then
                 break
             end
 
             local Inversed = 1 - i
-            Wire.CurveSize0 = self._rng:NextNumber(-3, 3) * Inversed
-            Wire.CurveSize1 = self._rng:NextNumber(-3, 3) * Inversed
+            Wire.CurveSize0 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
+            Wire.CurveSize1 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
 
-            DestinationA.WorldPosition = DestinationA.WorldPosition:Lerp(OriginA.WorldPosition, i)
+            DestinationA.WorldPosition = OriginalPosition:Lerp(OriginA.WorldPosition, i)
 
-            task.wait(RETRACT_STEP)
+            task.wait(HOOK_HALT)
         end
     end)
 end
@@ -501,7 +594,7 @@ function ODM:Destroy()
     self._inputManager:Destroy()
     self.Rig:Destroy()
 
-    RunService:UnbindFromRenderStep("ODMCamera")
+    RunService:UnbindFromRenderStep("ODMUpdate")
 
     self:_cleanupHookFX("Left")
     self:_cleanupHookFX("Right")

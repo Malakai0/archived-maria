@@ -14,7 +14,7 @@ local Camera = {
 	},
 
 	Z = {
-		Current = 6,
+		Current = 5,
 		Min = 2,
 		Max = 10,
 		Angle = 0
@@ -30,7 +30,7 @@ local Camera = {
 		end
 	},
 	Check = function(value, err)
-		if value == false then
+		if not value then
 			warn(err)
 		end
 	end
@@ -70,30 +70,38 @@ function Camera.Setup(Mouse)
 					Zoom("Out")
 				end)
 
+                Zoom("Out")
+
 				UserInputService.InputChanged:Connect(function(Input)
-					if Input ~= nil and Input.UserInputType == Enum.UserInputType.MouseMovement then
-						local X2 = Input.Delta.X
-						X.Delta = X2
-						Y.Delta = Input.Delta.Y
-						Z.Angle = Camera.Maths.Lerp(Z.Angle, Z.Angle + X2 / 5000 * 0.4, 0.1)
-						if X.Delta ~= X2 then
-							Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Z.Current)
-						end
-					end
+					if Input.UserInputType ~= Enum.UserInputType.MouseMovement then
+                        return
+                    end
+
+                    local X2 = Input.Delta.X
+                    local CurrentDelta = X.Delta
+
+                    X.Delta = X2
+                    Y.Delta = Input.Delta.Y
+                    Z.Angle = Camera.Maths.Lerp(Z.Angle, Z.Angle + X2 / 5000 * 0.4, 0.1)
+                    if CurrentDelta ~= X2 then
+                        Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Z.Current)
+                    end
 				end)
 
 				local State = 1
-				UserInputService.InputBegan:Connect(function(p11,p12)
-					if p11.UserInputType == Enum.UserInputType.MouseButton2 and p12 == false then
+				UserInputService.InputBegan:Connect(function(Input, IsChat)
+					if Input.UserInputType == Enum.UserInputType.MouseButton2 and not IsChat then
 						UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-						return
+                        return
 					end
-					if p11.KeyCode == Enum.KeyCode.LeftControl and p12 == false then
+
+					if Input.KeyCode == Enum.KeyCode.LeftControl and not IsChat then
 						if State == 1 then
 							UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 							State = 2
 							return
 						end
+
 						if State == 2 then
 							UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 							State = 1
@@ -125,10 +133,10 @@ function Camera.Update(CCam, Character, Delta)
 		if CCam and Character and Delta and X and Y and Z and Offset and Min and Max and Maths then
 			local RootPart = Character:FindFirstChild("HumanoidRootPart")
 
-			if RootPart ~= nil and Offset.Position ~= nil then
+			if RootPart then
 				CCam.CameraSubject = nil
 				CCam.CameraType = Enum.CameraType.Scriptable
-				X.Angle = math.clamp(X.Angle - Y.Delta / 180,Min,Max)
+				X.Angle = math.clamp(X.Angle - Y.Delta / 180, Min, Max)
 				Y.Angle = Y.Angle - X.Delta / 180
 				CCam.CFrame = CCam.CFrame:Lerp(CFrame.new(RootPart.Position + Vector3.new(1.5, 2, 0)) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Offset, 0.25)
 				Z.Angle = Maths.Lerp(Z.Angle, 0, math.min(Delta * 10, 0.8))

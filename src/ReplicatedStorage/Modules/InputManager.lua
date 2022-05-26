@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 
 local EMPTY_FUNC = function() end
@@ -17,7 +18,11 @@ function InputManager.new()
 
         _globalCallbacks = {},
         _callbacks = {},
+        _objectCallbacks = {},
 
+        _object = nil,
+
+        ToggleID = HttpService:GenerateGUID(),
         KeybindActivated = Signal.new(),
         KeybindDeactivated = Signal.new(),
     }
@@ -47,6 +52,13 @@ function InputManager:InitializeConnection()
                 self._activeKeybinds[Identifier] = true
                 self.KeybindActivated:Fire(Identifier)
 
+                if self._object then
+                    for _, Callback in pairs(self._objectCallbacks[Identifier]) do
+                        local Args = self:EvaluateArgs(Callback[2], true)
+                        task.spawn(self._object[Callback[1]], self._object, unpack(Args))
+                    end
+                end
+
                 for _, Callback in pairs(self._callbacks[Identifier]) do
                     task.spawn(Callback[1])
                 end
@@ -75,6 +87,13 @@ function InputManager:InitializeConnection()
                 self._activeKeybinds[Identifier] = nil
                 self.KeybindDeactivated:Fire(Identifier)
 
+                if self._object then
+                    for _, Callback in pairs(self._objectCallbacks[Identifier]) do
+                        local Args = self:EvaluateArgs(Callback[2], false)
+                        task.spawn(self._object[Callback[1]], self._object, unpack(Args))
+                    end
+                end
+
                 for _, Callback in pairs(self._callbacks[Identifier]) do
                     task.spawn(Callback[2])
                 end
@@ -85,6 +104,37 @@ function InputManager:InitializeConnection()
             end
         end
     end)
+end
+
+function InputManager:EvaluateArgs(Args, ToggleValue)
+    local Result = {}
+
+    for _, Arg in pairs(Args) do
+        if type(Arg) == "function" then
+            table.insert(Result, Arg(ToggleValue))
+            continue
+        end
+
+        if Arg == self.ToggleID then
+            table.insert(Result, ToggleValue)
+            continue
+        end
+
+        table.insert(Result, Arg)
+    end
+
+    return Result
+end
+
+function InputManager:SetObject(Object)
+    self._object = Object
+end
+
+function InputManager:BindActionToMethod(Identifier, Method, Args)
+    table.insert(self._objectCallbacks[Identifier], {
+        Method,
+        Args,
+    })
 end
 
 function InputManager:BindAllActions(ActivatedCallback, DeactivatedCallback)
@@ -103,6 +153,7 @@ end
 
 function InputManager:AddKeybind(Identifier, Combination)
     self._callbacks[Identifier] = {}
+    self._objectCallbacks[Identifier] = {}
     self._keybinds[Identifier] = Combination
 end
 

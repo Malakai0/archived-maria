@@ -38,118 +38,86 @@ local Camera = {
 }
 
 local function Zoom(Direction)
-    local Z2 = Camera.Z
+    local NewValue = Camera.Z.Current + (if Direction == "In" then -1 else 1)
+    Camera.Z.Current = math.clamp(NewValue, Camera.Z.Min, Camera.Z.Max)
 
-    if Direction ~= nil and Z2 ~= nil then
-        local NewValue = Z2.Current
-        local Min, Max = Z2.Min, Z2.Max
-
-        if Direction == "In" then
-            NewValue = Z2.Current - 1
-        else
-            NewValue = Z2.Current + 1
-        end
-        Z2.Current = NewValue
-        Z2.Current = Z2.Current <= Min and Min or (Max <= Z2.Current and Max or Z2.Current)
-
-        Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Z2.Current)
-    end
+    Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Camera.Z.Current)
 end
 
 function Camera.Setup(Mouse)
-	local Success, Error = pcall(function()
-		local X, Y, Z = Camera.X, Camera.Y, Camera.Z
-		if Mouse ~= nil and X ~= nil and Y ~= nil and Z ~= nil then
-			local Min = Z.Min
-			local Max = Z.Max
-			if Min ~= nil and Max ~= nil then
-				Mouse.WheelForward:Connect(function()
-					Zoom("In")
-				end)
+    local X, Y, Z = Camera.X, Camera.Y, Camera.Z
 
-				Mouse.WheelBackward:Connect(function()
-					Zoom("Out")
-				end)
+    Mouse.WheelForward:Connect(function()
+        Zoom("In")
+    end)
 
-                Zoom("Out")
+    Mouse.WheelBackward:Connect(function()
+        Zoom("Out")
+    end)
 
-				UserInputService.InputChanged:Connect(function(Input)
-					if Input.UserInputType ~= Enum.UserInputType.MouseMovement then
-                        return
-                    end
+    Zoom("Out")
 
-                    local X2 = Input.Delta.X
-                    local CurrentDelta = X.Delta
+    UserInputService.InputChanged:Connect(function(Input)
+        if Input.UserInputType ~= Enum.UserInputType.MouseMovement then
+            return
+        end
 
-                    X.Delta = X2
-                    Y.Delta = Input.Delta.Y
-                    Z.Angle = Camera.Maths.Lerp(Z.Angle, Z.Angle + X2 / 5000 * 0.4, 0.1)
-                    if CurrentDelta ~= X2 then
-                        Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Z.Current)
-                    end
-				end)
+        local DeltaX = Input.Delta.X
 
-				local State = 1
-				UserInputService.InputBegan:Connect(function(Input, IsChat)
-					if Input.UserInputType == Enum.UserInputType.MouseButton2 and not IsChat then
-						UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-                        return
-					end
+        X.Delta = DeltaX
+        Y.Delta = Input.Delta.Y
+        Z.Angle = Camera.Maths.Lerp(Z.Angle, Z.Angle + DeltaX / 5000 * 0.4, 0.1)
 
-					if Input.KeyCode == Enum.KeyCode.LeftControl and not IsChat then
-						if State == 1 then
-							UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-							State = 2
-							return
-						end
+        Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Z.Current)
+    end)
 
-						if State == 2 then
-							UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-							State = 1
-						end
-					end
-				end)
+    local State = 1
+    UserInputService.InputBegan:Connect(function(Input, IsChat)
+        if Input.UserInputType == Enum.UserInputType.MouseButton2 and not IsChat then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+            return
+        end
 
-				UserInputService.InputEnded:Connect(function(Input)
-					if Input.UserInputType == Enum.UserInputType.MouseButton2 then
-						UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-					end
-				end)
-			end
-		end
-	end)
+        if Input.KeyCode == Enum.KeyCode.LeftControl and not IsChat then
+            if State == 1 then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+                State = 2
+                return
+            end
 
-	Camera.Check(Success, Error)
+            if State == 2 then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                State = 1
+            end
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.MouseButton2 then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        end
+    end)
 end
-function Camera.Update(CCam, Character, Delta)
-	local Success, Error = pcall(function()
-		local X = Camera.X
-		local Y = Camera.Y
-		local Z = Camera.Z
-		local Offset = Camera.Offset
-		local Min = Camera.Min
-		local Max = Camera.Max
-		local Maths = Camera.Maths
 
-		if CCam and Character and Delta and X and Y and Z and Offset and Min and Max and Maths then
-			local RootPart = Character:FindFirstChild("HumanoidRootPart")
+function Camera.Update(Cam, Character, Delta)
+    local X, Y, Z = Camera.X, Camera.Y, Camera.Z
+    local RootPart = Character:FindFirstChild("HumanoidRootPart")
 
-			if RootPart then
-				CCam.CameraSubject = nil
-				CCam.CameraType = Enum.CameraType.Scriptable
-				X.Angle = math.clamp(X.Angle - Y.Delta / 180, Min, Max)
-				Y.Angle = Y.Angle - X.Delta / 180
+    if RootPart then
+        local Position = RootPart.Position + OFFSET
 
-                local Position = RootPart.Position + OFFSET
-				CCam.CFrame = CCam.CFrame:Lerp(CFrame.new(Position) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Offset, 0.25)
-				Z.Angle = Maths.Lerp(Z.Angle, 0, math.min(Delta * 10, 0.8))
-				X.Delta = 0
-				Y.Delta = 0
-			end
-		end
-	end)
+        Cam.CameraSubject = nil
+        Cam.CameraType = Enum.CameraType.Scriptable
 
-	Camera.Check(Success, Error)
+        X.Angle = math.clamp(X.Angle - Y.Delta / 180, Camera.Min, Camera.Max)
+        Y.Angle = Y.Angle - X.Delta / 180
+        Z.Angle = Camera.Maths.Lerp(Z.Angle, 0, math.min(Delta * 10, 0.8))
+
+        Cam.CFrame = Cam.CFrame:Lerp(CFrame.new(Position) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Camera.Offset, 0.25)
+
+        X.Delta = 0
+        Y.Delta = 0
+    end
 end
 
 function Camera.UpdateTilt(Delta, Tilt)

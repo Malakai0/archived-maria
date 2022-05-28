@@ -567,6 +567,7 @@ function ODM:_retractHookFX(Identifier)
 
     local OriginalPosition = DestinationA.WorldPosition
 
+    --// TODO: Replicate this too
     task.spawn(function()
         for i = 0, 1, HOOK_STEPS do
             if not (OriginA and DestinationA) or self._hookTargets[Identifier] then

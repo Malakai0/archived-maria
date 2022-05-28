@@ -18,6 +18,12 @@ local BLADES_PER_ARM = 4
 local RUN_SPEED = 28
 local WALK_SPEED = 11
 
+local STRAIGHT_LINE_SPEED_MULT = 1.25
+
+local DIRECTION_CHANGE_MULTIPLIER = 0.01
+local DEFAULT_MULTIPLIER = 0.02
+local BOOST_MULTIPLIER = 0.1
+
 local GAS_PER_FRAME = 1
 local BOOST_GAS_MULTIPLIER = 3
 
@@ -282,7 +288,6 @@ function ODM:Hook(Hook, Target)
                 end
 
                 self.BodyVelocity.MaxForce = Vector3.zero
-                self.BodyVelocity.Velocity = Vector3.zero
 
                 self.BodyGyro.MaxTorque = Vector3.zero
                 self.BodyGyro.CFrame = CFrame.new()
@@ -361,6 +366,10 @@ function ODM:_applyPhysics(dt)
 
     local Physics = self:_calculatePhysics()
 
+    if not Physics then
+        return
+    end
+
     self._cameraController:UpdateDirection(self.DriftDirection)
 
     self:_boostEffect(self.Boosting)
@@ -410,9 +419,9 @@ function ODM:_calculatePhysics()
         Speed = Distance * 4
     end
 
-    local Multiplier = PrioritizedIf({ 0.02,
-        self._directionChange ~= nil, .01,
-        self.Boosting == true, .1
+    local Multiplier = PrioritizedIf({ DEFAULT_MULTIPLIER,
+        self._directionChange ~= nil, DIRECTION_CHANGE_MULTIPLIER,
+        self.Boosting == true, BOOST_MULTIPLIER,
     })
 
     local Cross = Direction:Cross(Vector3.yAxis)
@@ -422,6 +431,11 @@ function ODM:_calculatePhysics()
 
     local MaxForce = BodyVelocity.MaxForce:Lerp(MAX_BV_FORCE, .1)
     local Velocity
+
+    --// If we're moving towards the target, we want to move faster
+    if BodyVelocity.Velocity.Unit:Dot(Direction) >= .8 then
+        Speed *= STRAIGHT_LINE_SPEED_MULT
+    end
 
     if self.DriftDirection == 0 then
         Velocity = BodyVelocity.Velocity:Lerp(Direction * Speed, Multiplier)
@@ -462,6 +476,7 @@ function ODM:_update(dt)
 
     if not (self._hookTargets.Left or self._hookTargets.Right) then
         self._cameraController:UpdateDirection(0)
+        self.BodyVelocity.Velocity = self.BodyVelocity.Velocity:Lerp(Vector3.zero, 0.01)
     end
 
     if self._targetFOV ~= TargetFOV then

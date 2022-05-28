@@ -18,7 +18,7 @@ local BLADES_PER_ARM = 4
 local RUN_SPEED = 28
 local WALK_SPEED = 11
 
-local STRAIGHT_LINE_SPEED_MULT = 1.25
+local STRAIGHT_LINE_SPEED_MULT = 1.15
 
 local DIRECTION_CHANGE_MULTIPLIER = 0.01
 local DEFAULT_MULTIPLIER = 0.02
@@ -112,8 +112,8 @@ function ODM.new(ODMRig)
 
         Properties = {
             Speed = 0,
-            MaxSpeed = 75,
-            HookRange = 300 --// Change to a constant??
+            MaxSpeed = 45,
+            HookRange = 300
         },
 
         _targetFOV = workspace.CurrentCamera.FieldOfView,

@@ -66,7 +66,7 @@ end
 local ODM = {}
 ODM.__index = ODM
 
-function ODM.new(ODMRig, BladePrefab, Mass)
+function ODM.new(ODMRig)
     local RootPart = Player.Character:WaitForChild("HumanoidRootPart")
 
     local BodyVelocity, BodyGyro = SetupBodyMovers()
@@ -78,9 +78,6 @@ function ODM.new(ODMRig, BladePrefab, Mass)
 
         Rig = ODMRig,
         Main = ODMRig.Main,
-        Mass = Mass,
-        BladePrefab = BladePrefab,
-
         BodyVelocity = BodyVelocity,
         BodyGyro = BodyGyro,
 
@@ -118,6 +115,7 @@ function ODM.new(ODMRig, BladePrefab, Mass)
         _fx = {},
         _rng = Random.new(),
         _inputManager = InputManager.new(),
+        _odmService = Knit.GetService("ODMService"),
         _cameraController = Knit.GetController("CameraController"),
     }
 
@@ -176,37 +174,26 @@ function ODM:Hold(Toggle)
 
     local Target = not self.Holding
 
-    local Handles = self.Rig.Handles
     local Blades = self.Rig.Blades
     local BladeAmount = self.Equipment.Blades
 
-    local Divisible = BladeAmount % BLADES_PER_ARM == 0
-    local BladeIndex = Switch(Target, {
-        Default = "",
-        [true] = if Divisible then BLADES_PER_ARM else BladeAmount % BLADES_PER_ARM,
-    })
-
     if Target and BladeAmount > 0 then
         --// TODO: Hold animation
+
+        local Divisible = BladeAmount % BLADES_PER_ARM == 0
+        local BladeIndex = if Divisible then BLADES_PER_ARM else BladeAmount % BLADES_PER_ARM
 
         local LeftBladeVisual = Blades.Left:FindFirstChild(BladeIndex)
         local RightBladeVisual = Blades.Right:FindFirstChild(BladeIndex)
 
         LeftBladeVisual.Transparency, RightBladeVisual.Transparency = 1, 1
 
-        local LeftBlade, RightBlade = self.BladePrefab:Clone(), self.BladePrefab:Clone()
-        LeftBlade.Name, RightBlade.Name = "Left", "Right"
-
-        RigHelper.WeldBladeToHandle(Handles.Left, LeftBlade)
-        RigHelper.WeldBladeToHandle(Handles.Right, RightBlade)
-
-        LeftBlade.Parent, RightBlade.Parent = self.Root, self.Root
+        self._odmService:RequestBlades()
 
         self.Equipment.Blades -= 1
         self.Holding = true
     elseif not Target then
-        RigHelper.UnweldBladeToHandle(Handles.Left)
-        RigHelper.UnweldBladeToHandle(Handles.Right)
+        self._odmService:DestroyBlades()
 
         self.Holding = false
     end
@@ -220,11 +207,9 @@ function ODM:Equip(Target)
     self.Equipped = not self.Equipped
 
     if self.Equipped then
-        RigHelper.WeldHandleToArm("Left", self.Rig, self.Character:FindFirstChild("Left Arm"))
-        RigHelper.WeldHandleToArm("Right", self.Rig, self.Character:FindFirstChild("Right Arm"))
+        self._odmService:RequestHoldHandles()
     else
-        RigHelper.WeldHandleToRig("Left", self.Rig, self.Character:FindFirstChild("Left Arm"))
-        RigHelper.WeldHandleToRig("Right", self.Rig, self.Character:FindFirstChild("Right Arm"))
+        self._odmService:RequestStopHoldingHandles()
     end
 
     --// TODO: Add equipment animations
@@ -296,8 +281,6 @@ function ODM:Hook(Hook, Target)
                     end
                 end
 
-                self.Mass.Massless = true
-
                 self.BodyVelocity.MaxForce = Vector3.zero
                 self.BodyVelocity.Velocity = Vector3.zero
 
@@ -346,7 +329,6 @@ function ODM:Hook(Hook, Target)
                 Part.Massless = true
             end
         end
-        self.Mass.Massless = false
 
         self:_gasEffect(true)
         self._connection = RunService.Heartbeat:Connect(function(dt)

@@ -23,7 +23,7 @@ end
 function CameraController:KnitStart()
     Camera.Setup(Players.LocalPlayer:GetMouse())
 
-    RunService:BindToRenderStep("CameraController", Enum.RenderPriority.Camera.Value, function(dt)
+    RunService:BindToRenderStep("CameraController", Enum.RenderPriority.Camera.Value - 1, function(dt)
         Delta = dt
         self:Update(dt)
     end)

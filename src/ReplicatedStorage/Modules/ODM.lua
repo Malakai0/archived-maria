@@ -4,7 +4,7 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 
-local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
 local CAMERA_SHAKE_OFFSET = 0.0125
 local CAMERA_OFFSET = Vector3.yAxis * 2
 
@@ -112,7 +112,7 @@ function ODM.new(ODMRig)
 
         Properties = {
             Speed = 0,
-            MaxSpeed = 60,
+            MaxSpeed = 75,
             HookRange = 300 --// Change to a constant??
         },
 
@@ -151,7 +151,7 @@ function ODM:Initialize()
     self.Humanoid.CameraOffset = CAMERA_OFFSET
     self.Humanoid.WalkSpeed = WALK_SPEED
 
-    RunService:BindToRenderStep("ODMUpdate", Enum.RenderPriority.Camera.Value, function(dt)
+    RunService:BindToRenderStep("ODMUpdate", Enum.RenderPriority.Camera.Value - 1, function(dt)
         self:_update(dt)
     end)
 end
@@ -395,13 +395,14 @@ function ODM:_calculatePhysics()
     local TargetPosition = Vector3.zero
     local Speed = self.Properties.MaxSpeed * 4
 
-    local RootP = self.Root.Position
+    local Root = self.Root
+    local RootP = Root.Position
 
     local LeftPosition = if self.Hooks.Left then self.Hooks.Left.WorldPosition else nil
     local RightPosition = if self.Hooks.Right then self.Hooks.Right.WorldPosition else nil
 
-    if self.Hooks.Left and self.Hooks.Right then
-        TargetPosition = (LeftPosition + RightPosition) / 2
+    if LeftPosition and RightPosition then
+        TargetPosition = LeftPosition:Lerp(RightPosition, 0.5)
     else
         TargetPosition = LeftPosition or RightPosition
     end
@@ -432,7 +433,6 @@ function ODM:_calculatePhysics()
     local MaxForce = BodyVelocity.MaxForce:Lerp(MAX_BV_FORCE, .1)
     local Velocity
 
-    --// If we're moving towards the target, we want to move faster
     if BodyVelocity.Velocity.Unit:Dot(Direction) >= .8 then
         Speed *= STRAIGHT_LINE_SPEED_MULT
     end
@@ -454,7 +454,7 @@ function ODM:_calculatePhysics()
         BG = {
             MaxTorque = MAX_BG_TORQUE,
             CFrame = Matrix
-        }
+        },
     }
 end
 
@@ -572,6 +572,7 @@ function ODM:_retractHookFX(Identifier)
             end
 
             local Inversed = 1 - i
+
             Wire.CurveSize0 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
             Wire.CurveSize1 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
 
@@ -607,11 +608,24 @@ function ODM:_configureAttachment(Attachment, Parent, WorldPosition)
     Attachment.WorldPosition = WorldPosition
 end
 
+function ODM:_getMouseTarget()
+    local Mouse = Player:GetMouse()
+    Mouse.TargetFilter = Player.Character
+
+    local ScreenRay = workspace.CurrentCamera:ScreenPointToRay(Mouse.X, Mouse.Y)
+    return workspace:Raycast(ScreenRay.Origin, ScreenRay.Direction.Unit * 1000, RAY_PARAMS)
+end
+
 function ODM:_getHookTarget()
     local Origin = Player.Character.PrimaryPart.Position
-    local Target = Player:GetMouse().Hit.Position
 
-    local Direction = (Target - Origin).Unit * self.Properties.HookRange
+    local TargetResult = self:_getMouseTarget()
+
+    if not TargetResult then
+        return
+    end
+
+    local Direction = (TargetResult.Position - Origin).Unit * self.Properties.HookRange
     local Result = workspace:Raycast(Origin, Direction, RAY_PARAMS)
 
     return if Result then Result.Position else nil

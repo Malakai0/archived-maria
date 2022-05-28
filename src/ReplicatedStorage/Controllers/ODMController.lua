@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Knit = require(ReplicatedStorage.Packages.Knit)
 
-local RigHelper = require(ReplicatedStorage.Source.Modules.RigHelper)
+local RigHelper = require(ReplicatedStorage.Source.Modules.Helper.RigHelper)
 local ODM = require(ReplicatedStorage.Source.Modules.ODM)
 
 local function CreateMass()
@@ -23,6 +23,11 @@ local ODMController = Knit.CreateController({
 })
 
 local ODMRig = ReplicatedStorage.Objects.ODM.Default
+local Blade = ReplicatedStorage.Objects.Blades.Default
+
+function ODMController:GetODM()
+    return self._currentODM
+end
 
 function ODMController:SetupCharacter(Character)
     local Root = Character:WaitForChild("HumanoidRootPart")
@@ -39,19 +44,19 @@ function ODMController:SetupCharacter(Character)
     Mass.Parent = Character
     Rig.Parent = Root
 
-    return Rig, ODMRig.LeftWeapon, ODMRig.RightWeapon, Mass
+    return Rig, Mass
 end
 
 function ODMController:Spawned()
     local Character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
 
-    local Rig, LeftWeapon, RightWeapon, Mass = self:SetupCharacter(Character)
+    local Rig, Mass = self:SetupCharacter(Character)
 
     if self._currentODM and self._currentODM.Destroy then
         self._currentODM:Destroy()
     end
 
-    self._currentODM = ODM.new(Rig, LeftWeapon, RightWeapon, Mass)
+    self._currentODM = ODM.new(Rig, Blade, Mass)
 
     Character.Humanoid.Died:Connect(function()
         self._currentODM:Destroy()

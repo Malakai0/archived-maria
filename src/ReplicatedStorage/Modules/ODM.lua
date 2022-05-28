@@ -5,7 +5,7 @@ local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 
 local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-local CAMERA_SHAKE_OFFSET = 0.075
+local CAMERA_SHAKE_OFFSET = 0.0125
 local CAMERA_OFFSET = Vector3.yAxis * 2
 
 local HOOK_SPREAD = 3
@@ -18,16 +18,25 @@ local BLADES_PER_ARM = 4
 local RUN_SPEED = 28
 local WALK_SPEED = 11
 
+local GAS_PER_FRAME = 1
+local BOOST_GAS_MULTIPLIER = 3
+
 local MAX_GAS = 10000
-local MAX_BV_FORCE = Vector3.new(30000, 20000, 30000)
+local MAX_BV_FORCE = Vector3.new(30000, 25000, 30000)
 local MAX_BG_TORQUE = Vector3.one * 100000000
+
+local RAY_PARAMS = RaycastParams.new()
+RAY_PARAMS.IgnoreWater = true
+RAY_PARAMS.FilterType = Enum.RaycastFilterType.Whitelist
+RAY_PARAMS.FilterDescendantsInstances = {workspace.Map}
 
 local Knit = require(ReplicatedStorage.Packages.Knit)
 
+local PrioritizedIf = require(ReplicatedStorage.Source.Modules.Helper.PrioritizedIf)
+local EmbeddedIf = require(ReplicatedStorage.Source.Modules.Helper.EmbeddedIf)
+local RigHelper = require(ReplicatedStorage.Source.Modules.Helper.RigHelper)
 local InputManager = require(ReplicatedStorage.Source.Modules.InputManager)
-local PrioritizedIf = require(ReplicatedStorage.Source.Modules.PrioritizedIf)
-local EmbeddedIf = require(ReplicatedStorage.Source.Modules.EmbeddedIf)
-local RigHelper = require(ReplicatedStorage.Source.Modules.RigHelper)
+local Switch = require(ReplicatedStorage.Source.Modules.Helper.Switch)
 
 local Player = Players.LocalPlayer
 
@@ -57,7 +66,7 @@ end
 local ODM = {}
 ODM.__index = ODM
 
-function ODM.new(ODMRig, LeftWeapon, RightWeapon, Mass)
+function ODM.new(ODMRig, BladePrefab, Mass)
     local RootPart = Player.Character:WaitForChild("HumanoidRootPart")
 
     local BodyVelocity, BodyGyro = SetupBodyMovers()
@@ -70,9 +79,7 @@ function ODM.new(ODMRig, LeftWeapon, RightWeapon, Mass)
         Rig = ODMRig,
         Main = ODMRig.Main,
         Mass = Mass,
-
-        LeftWeapon = LeftWeapon,
-        RightWeapon = RightWeapon,
+        BladePrefab = BladePrefab,
 
         BodyVelocity = BodyVelocity,
         BodyGyro = BodyGyro,
@@ -82,6 +89,8 @@ function ODM.new(ODMRig, LeftWeapon, RightWeapon, Mass)
         Sprinting = false,
         Boosting = false,
         DriftDirection = 0,
+
+        Blades = {},
 
         Hooks = {},
 
@@ -93,7 +102,9 @@ function ODM.new(ODMRig, LeftWeapon, RightWeapon, Mass)
         Equipment = {
             Blades = BLADES_PER_ARM,
             Durability = 0,
-            Gas = MAX_GAS
+
+            Gas = MAX_GAS,
+            MaxGas = MAX_GAS,
         },
 
         Properties = {
@@ -169,29 +180,36 @@ function ODM:Hold(Toggle)
     local Blades = self.Rig.Blades
     local BladeAmount = self.Equipment.Blades
 
+    local Divisible = BladeAmount % BLADES_PER_ARM == 0
+    local BladeIndex = Switch(Target, {
+        Default = "",
+        [true] = if Divisible then BLADES_PER_ARM else BladeAmount % BLADES_PER_ARM,
+    })
+
     if Target and BladeAmount > 0 then
-        local Divisible = BladeAmount % BLADES_PER_ARM == 0
-        local BladeIndex = if Divisible then BLADES_PER_ARM else BladeAmount % BLADES_PER_ARM
-        local LeftBlade = Blades.Left:FindFirstChild(BladeIndex)
-        local RightBlade = Blades.Right:FindFirstChild(BladeIndex)
+        --// TODO: Hold animation
 
-        LeftBlade.Transparency, RightBlade.Transparency = 0, 0
+        local LeftBladeVisual = Blades.Left:FindFirstChild(BladeIndex)
+        local RightBladeVisual = Blades.Right:FindFirstChild(BladeIndex)
 
-        RigHelper.WeldBladeToHandle("Left", self.Rig, LeftBlade)
-        RigHelper.WeldBladeToHandle("Right", self.Rig, RightBlade)
+        LeftBladeVisual.Transparency, RightBladeVisual.Transparency = 1, 1
+
+        local LeftBlade, RightBlade = self.BladePrefab:Clone(), self.BladePrefab:Clone()
+        LeftBlade.Name, RightBlade.Name = "Left", "Right"
+
+        RigHelper.WeldBladeToHandle(Handles.Left, LeftBlade)
+        RigHelper.WeldBladeToHandle(Handles.Right, RightBlade)
+
+        LeftBlade.Parent, RightBlade.Parent = self.Root, self.Root
 
         self.Equipment.Blades -= 1
         self.Holding = true
     elseif not Target then
-        local LeftBlade = RigHelper.UnweldBladeToHandle(self.Rig, Handles.Left)
-        local RightBlade = RigHelper.UnweldBladeToHandle(self.Rig, Handles.Right)
-
-        LeftBlade.Transparency, RightBlade.Transparency = 1, 1
+        RigHelper.UnweldBladeToHandle(Handles.Left)
+        RigHelper.UnweldBladeToHandle(Handles.Right)
 
         self.Holding = false
     end
-
-    --// TODO: Hold animation
 end
 
 function ODM:Equip(Target)
@@ -219,20 +237,21 @@ end
 function ODM:Drift(DirectionOffset)
     self.DriftDirection += DirectionOffset
 
-    local Hooks = self.Hooks
     local Direction = self.DriftDirection
 
-    if Direction ~= 0 and (Hooks.Left or Hooks.Right) then
-        if self.Equipment.Gas <= 0 then
-            return
-        end
+    if Direction ~= 0 then
+        task.spawn(function()
+            repeat
+                task.wait(0.1)
+            until self._hookTargets.Left or self._hookTargets.Right
 
-        local _id = HttpService:GenerateGUID()
-        self._directionChange = _id
-        task.delay(.2, function()
-            if self._directionChange == _id then
-                self._directionChange = false
-            end
+            local _id = HttpService:GenerateGUID()
+            self._directionChange = _id
+            task.delay(.2, function()
+                if self._directionChange == _id then
+                    self._directionChange = nil
+                end
+            end)
         end)
     end
 end
@@ -249,8 +268,9 @@ function ODM:Hook(Hook, Target)
 
         self:_retractHookFX(Hook)
         self.Hooks[Hook] = nil
+        self.Humanoid.PlatformStand = false
 
-        local AnyHooks = self.Hooks.Left or self.Hooks.Right
+        local AnyHooks = self._hookTargets.Left or self._hookTargets.Right
 
         if self._connection and not AnyHooks then
             self._connection:Disconnect()
@@ -258,6 +278,7 @@ function ODM:Hook(Hook, Target)
 
             self:Boost(false)
             self:_boostEffect(false)
+            self:_gasEffect(false)
         end
 
         task.delay(HOOK_LENGTH * 2, function()
@@ -268,9 +289,7 @@ function ODM:Hook(Hook, Target)
             self.Hooking[Hook] = false
             self:_cleanupHookFX(Hook)
 
-            if not (self.Hooks.Left or self.Hooks.Right) then
-                self.Humanoid.PlatformStand = false
-
+            if not (self._hookTargets.Left or self._hookTargets.Right) then
                 for _, Part in pairs(Player.Character:GetDescendants()) do
                     if Part:IsA("BasePart") then
                         Part.Massless = false
@@ -305,8 +324,8 @@ function ODM:Hook(Hook, Target)
     self:Boost(false)
     self:_boostEffect(false)
 
-    if not (self.Hooks.Left or self.Hooks.Right) then
-        self.BodyVelocity.MaxForce = Vector3.zero
+    if not (self._hookTargets.Left or self._hookTargets.Right) then
+        --self.BodyVelocity.MaxForce = Vector3.zero
     end
 
     local ActualHook = self:_createHookFX(Hook, HookPosition)
@@ -329,6 +348,7 @@ function ODM:Hook(Hook, Target)
         end
         self.Mass.Massless = false
 
+        self:_gasEffect(true)
         self._connection = RunService.Heartbeat:Connect(function(dt)
             self:_applyPhysics(dt)
         end)
@@ -336,10 +356,6 @@ function ODM:Hook(Hook, Target)
 end
 
 function ODM:Boost(Target)
-    if not (self.Hooks.Left or self.Hooks.Right) then
-        return
-    end
-
     if self.Equipment.Gas <= 0 then
         return
     end
@@ -348,6 +364,14 @@ function ODM:Boost(Target)
 end
 
 function ODM:_applyPhysics(dt)
+    if self.Equipment.Gas <= 0 then
+        self:_boostEffect(false)
+        self:Hook("Left", false)
+        self:Hook("Right", false)
+
+        return
+    end
+
     local BodyVelocity = self.BodyVelocity
     local BodyGyro = self.BodyGyro
 
@@ -357,8 +381,15 @@ function ODM:_applyPhysics(dt)
 
     self._cameraController:UpdateDirection(self.DriftDirection)
 
-    self:_update(dt)
     self:_boostEffect(self.Boosting)
+
+    local GasDecrement = (GAS_PER_FRAME * 60 * dt)
+
+    if self.Boosting then
+        GasDecrement *= BOOST_GAS_MULTIPLIER
+    end
+
+    self.Equipment.Gas = math.max(self.Equipment.Gas - GasDecrement, 0)
 
     BodyVelocity.MaxForce = Physics.BV.MaxForce
     BodyVelocity.Velocity = Physics.BV.Velocity
@@ -384,6 +415,10 @@ function ODM:_calculatePhysics()
         TargetPosition = LeftPosition or RightPosition
     end
 
+    if not TargetPosition then
+        return
+    end
+
     local Difference = TargetPosition - RootP
 
     local Distance = Difference.Magnitude
@@ -394,7 +429,7 @@ function ODM:_calculatePhysics()
     end
 
     local Multiplier = PrioritizedIf({ 0.02,
-        self._directionChange ~= nil, .02,
+        self._directionChange ~= nil, .01,
         self.Boosting == true, .1
     })
 
@@ -427,12 +462,14 @@ function ODM:_calculatePhysics()
     }
 end
 
-function ODM:_boostEffect(Active)
-    self.Main.Trail.Enabled = Active
-
+function ODM:_gasEffect(Active)
     for _, Particle in pairs(self.Main.GasEjection:GetChildren()) do
         Particle.Enabled = Active
     end
+end
+
+function ODM:_boostEffect(Active)
+    self.Main.Trail.Enabled = Active
 end
 
 function ODM:_update(dt)
@@ -460,10 +497,7 @@ function ODM:_update(dt)
         local RY = self._rng:NextNumber(-CAMERA_SHAKE_OFFSET, CAMERA_SHAKE_OFFSET)
         local RZ = self._rng:NextNumber(-CAMERA_SHAKE_OFFSET, CAMERA_SHAKE_OFFSET)
 
-        local Target = Camera.CFrame:Lerp(Camera.CFrame * CFrame.new(RX,RY,RZ), 48 * dt)
-        local Offset = Camera.CFrame:ToObjectSpace(Target)
-
-        self.Humanoid.CameraOffset = Offset.Position + CAMERA_OFFSET
+        Camera.CFrame = Camera.CFrame:Lerp(Camera.CFrame * CFrame.new(RX,RY,RZ), 48 * dt)
     end
 end
 
@@ -579,13 +613,8 @@ function ODM:_getHookTarget()
     local Origin = Player.Character.PrimaryPart.Position
     local Target = Player:GetMouse().Hit.Position
 
-    local Parameters = RaycastParams.new()
-    Parameters.IgnoreWater = true
-    Parameters.FilterType = Enum.RaycastFilterType.Blacklist
-    Parameters.FilterDescendantsInstances = {Player.Character}
-
     local Direction = (Target - Origin).Unit * self.Properties.HookRange
-    local Result = workspace:Raycast(Origin, Direction, Parameters)
+    local Result = workspace:Raycast(Origin, Direction, RAY_PARAMS)
 
     return if Result then Result.Position else nil
 end

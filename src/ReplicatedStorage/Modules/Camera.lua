@@ -1,6 +1,7 @@
 local UserInputService = game:GetService("UserInputService")
 
 local PI = math.pi
+local OFFSET = Vector3.new(1.5, 2, 0)
 
 local Camera = {
 	X = {
@@ -138,7 +139,9 @@ function Camera.Update(CCam, Character, Delta)
 				CCam.CameraType = Enum.CameraType.Scriptable
 				X.Angle = math.clamp(X.Angle - Y.Delta / 180, Min, Max)
 				Y.Angle = Y.Angle - X.Delta / 180
-				CCam.CFrame = CCam.CFrame:Lerp(CFrame.new(RootPart.Position + Vector3.new(1.5, 2, 0)) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Offset, 0.25)
+
+                local Position = RootPart.Position + OFFSET
+				CCam.CFrame = CCam.CFrame:Lerp(CFrame.new(Position) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Offset, 0.25)
 				Z.Angle = Maths.Lerp(Z.Angle, 0, math.min(Delta * 10, 0.8))
 				X.Delta = 0
 				Y.Delta = 0

@@ -1,3 +1,4 @@
+local Debris = game:GetService("Debris")
 local RigHelper = {}
 
 function RigHelper.WeldToCharacter(Rig, Character)
@@ -39,39 +40,30 @@ function RigHelper.WeldHandleToRig(Side, MainRig, Arm)
     RigWeld.Enabled = true
 end
 
-function RigHelper.WeldBladeToHandle(Side, MainRig, Blade)
-    local Handle = MainRig.Handles:FindFirstChild(Side)
-    local RigWeld = MainRig:FindFirstChild(string.format("%sWeld%s", Handle.Name, Blade.Name))
-
-    RigWeld.Enabled = false
-
+function RigHelper.WeldBladeToHandle(Handle, Blade)
     if Handle:FindFirstChild("BladeWeld") then
         Handle.BladeWeld.Part1 = Blade
-        Handle.BladeWeld.Enabled = true
         return
     end
 
     local Weld = Instance.new("Motor6D")
 
+    Weld.Enabled = true
     Weld.Name = "BladeWeld"
     Weld.Part0 = Handle.PrimaryPart
     Weld.Part1 = Blade
-    Weld.C0 = CFrame.new(0, 0, -2)
+    Weld.C0 = CFrame.new(0, 0, -2.2)
     Weld.Parent = Handle
 
     return Weld
 end
 
-function RigHelper.UnweldBladeToHandle(MainRig, Handle)
-    local BladeWeld = Handle.BladeWeld
-    local Blade = BladeWeld.Part1
+function RigHelper.UnweldBladeToHandle(Handle)
+    local Blade = Handle.BladeWeld.Part1
 
-    local RigWeld = MainRig:FindFirstChild(string.format("%sWeld%s", Handle.Name, Blade.Name))
+    Blade.CanCollide = true
 
-    RigWeld.Enabled = true
-    BladeWeld.Enabled = false
-
-    return Blade
+    Handle.BladeWeld.Part1 = nil
 end
 
 return RigHelper

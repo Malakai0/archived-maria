@@ -1,7 +1,8 @@
 local UserInputService = game:GetService("UserInputService")
 
 local PI = math.pi
-local OFFSET = Vector3.new(1.5, 2, 0)
+local OFFSET = Vector3.new(0, 2, 0)
+local TILT_FPS = 1 / 30
 
 local Camera = {
 	X = {
@@ -27,7 +28,7 @@ local Camera = {
 	Max = 5 * PI / 20,
 	Maths = {
 		Lerp = function(a, b, x)
-			return a / 2 + (b - a) * x
+			return (1 - x) * a + x * b
 		end
 	},
 	Check = function(value, err)
@@ -124,7 +125,7 @@ function Camera.Update(Cam, Character, Delta)
 end
 
 function Camera.UpdateTilt(Delta, Tilt)
-	Camera.Tilt = Camera.Maths.Lerp(Camera.Tilt, Tilt, math.min(Delta * 3, 1))
+	Camera.Tilt = Camera.Maths.Lerp(Camera.Tilt, Tilt, TILT_FPS * Delta * 60)
 end
 
 return Camera

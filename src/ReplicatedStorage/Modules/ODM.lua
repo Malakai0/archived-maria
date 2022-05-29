@@ -9,6 +9,7 @@ local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local CAMERA_SHAKE_OFFSET = 0.0125
 local CAMERA_OFFSET = Vector3.yAxis * 2
 
+local TILT_MULT = .1
 local HOOK_SPREAD = 10
 local HOOK_HALT = 1 / 150
 local HOOK_STEPS = 1 / 15
@@ -29,7 +30,7 @@ local GAS_PER_FRAME = 1
 local BOOST_GAS_MULTIPLIER = 3
 
 local MAX_GAS = 10000
-local MAX_BV_FORCE = Vector3.new(30000, 25000, 30000)
+local MAX_BV_FORCE = Vector3.new(30000, 20000, 30000)
 local MAX_BG_TORQUE = Vector3.one * 100000000
 
 local RAY_PARAMS = RaycastParams.new()
@@ -46,7 +47,7 @@ local InputManager = require(ReplicatedStorage.Source.Modules.InputManager)
 local Player = Players.LocalPlayer
 
 local function Lerp(a, b, t)
-    return (1 - t) * a + t * b
+    return a + (b - a) * t
 end
 
 local function SetupBodyMovers()
@@ -113,10 +114,11 @@ function ODM.new(ODMRig)
 
         Properties = {
             Speed = 0,
-            MaxSpeed = 75,
-            HookRange = 300
+            MaxSpeed = 55,
+            HookRange = 500
         },
 
+        _targetTilt = 0,
         _lastHooked = 0,
         _targetFOV = workspace.CurrentCamera.FieldOfView,
         _hookTargets = {},
@@ -403,9 +405,6 @@ function ODM:_applyPhysics(dt)
         return
     end
 
-    local Speed = BodyVelocity.Velocity.Magnitude / (self.Properties.MaxSpeed * 2)
-    self._cameraController:UpdateDirection(self.DriftDirection * Speed)
-
     self:_boostEffect(self.Boosting)
 
     local GasDecrement = (GAS_PER_FRAME * 60 * dt)
@@ -505,13 +504,20 @@ end
 function ODM:_update(dt)
     local Camera = workspace.CurrentCamera
 
+    local NoHooks = not (self._hookTargets.Left or self._hookTargets.Right)
+
     local Velocity = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
     local TargetFOV = math.min(math.floor(70 + 30 * Velocity), 110)
+    local TiltTarget = self.DriftDirection * TILT_MULT
+    local Speed = if NoHooks then 0 else self.BodyVelocity.Velocity.Magnitude / (self.Properties.MaxSpeed * 2)
+    local Tilt = TiltTarget * Speed * (dt * 60)
+
     self.DepthOfField.FarIntensity = Lerp(0, 0.2, Velocity)
+    self._targetTilt = Tilt
 
-    if not (self._hookTargets.Left or self._hookTargets.Right) then
-        self._cameraController:UpdateDirection(0)
+    self._cameraController:UpdateDirection(self._targetTilt)
 
+    if NoHooks then
         local projected = dt * 60
 
         self.BodyVelocity.MaxForce = self.BodyVelocity.MaxForce:Lerp(Vector3.zero, 0.1 * projected)

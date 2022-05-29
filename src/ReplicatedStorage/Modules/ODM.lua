@@ -2,15 +2,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 
 local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
 local CAMERA_SHAKE_OFFSET = 0.0125
 local CAMERA_OFFSET = Vector3.yAxis * 2
 
-local HOOK_SPREAD = 3
-local HOOK_HALT = 1 / 300
-local HOOK_STEPS = 1 / 30
+local HOOK_SPREAD = 10
+local HOOK_HALT = 1 / 150
+local HOOK_STEPS = 1 / 15
 local HOOK_LENGTH = HOOK_HALT * (1 / HOOK_STEPS)
 
 local BLADES_PER_ARM = 4
@@ -40,9 +41,7 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local PrioritizedIf = require(ReplicatedStorage.Source.Modules.Helper.PrioritizedIf)
 local EmbeddedIf = require(ReplicatedStorage.Source.Modules.Helper.EmbeddedIf)
-local RigHelper = require(ReplicatedStorage.Source.Modules.Helper.RigHelper)
 local InputManager = require(ReplicatedStorage.Source.Modules.InputManager)
-local Switch = require(ReplicatedStorage.Source.Modules.Helper.Switch)
 
 local Player = Players.LocalPlayer
 
@@ -87,6 +86,8 @@ function ODM.new(ODMRig)
         BodyVelocity = BodyVelocity,
         BodyGyro = BodyGyro,
 
+        DepthOfField = Lighting.DepthOfField,
+
         Holding = false,
         Equipped = false,
         Sprinting = false,
@@ -112,16 +113,19 @@ function ODM.new(ODMRig)
 
         Properties = {
             Speed = 0,
-            MaxSpeed = 45,
+            MaxSpeed = 75,
             HookRange = 300
         },
 
+        _lastHooked = 0,
         _targetFOV = workspace.CurrentCamera.FieldOfView,
         _hookTargets = {},
         _fx = {},
         _rng = Random.new(),
         _inputManager = InputManager.new(),
+
         _odmService = Knit.GetService("ODMService"),
+        _animations = Knit.GetController("AnimationController"),
         _cameraController = Knit.GetController("CameraController"),
     }
 
@@ -194,7 +198,10 @@ function ODM:Hold(Toggle)
 
         LeftBladeVisual.Transparency, RightBladeVisual.Transparency = 1, 1
 
-        self._odmService:RequestBlades()
+        self._animations:PlayAnimation("BladeChange")
+        task.delay(0.4, function()
+            self._odmService:RequestBlades()
+        end)
 
         self.Equipment.Blades -= 1
         self.Holding = true
@@ -248,7 +255,7 @@ function ODM:Drift(DirectionOffset)
 end
 
 function ODM:CanHook()
-    return self.Equipment.Gas > 0
+    return self.Equipment.Gas > 0 and self.Equipped
 end
 
 function ODM:Hook(Hook, Target)
@@ -256,6 +263,10 @@ function ODM:Hook(Hook, Target)
 
     if not Target then
         self.Hooking[Hook] = true
+
+        self._animations:StopAnimation("DoubleHook")
+        self._animations:StopAnimation("DoubleGrappleIdle")
+        self._animations:StopAnimation(Hook .. "GrappleIdle")
 
         self:_retractHookFX(Hook)
         self.Hooks[Hook] = nil
@@ -286,11 +297,6 @@ function ODM:Hook(Hook, Target)
                         Part.Massless = false
                     end
                 end
-
-                self.BodyVelocity.MaxForce = Vector3.zero
-
-                self.BodyGyro.MaxTorque = Vector3.zero
-                self.BodyGyro.CFrame = CFrame.new()
             end
         end)
 
@@ -305,6 +311,8 @@ function ODM:Hook(Hook, Target)
     if not HookPosition then
         return
     end
+
+    self._lastHooked = tick()
 
     self.Hooking[Hook] = true
     self.Equipment.Gas -= 1 --// Initial cost of hooking
@@ -329,6 +337,26 @@ function ODM:Hook(Hook, Target)
             return
         end
 
+        local AnimationName, IdleAnimation
+        task.delay(HOOK_LENGTH, function()
+            if self._hookTargets.Left and self._hookTargets.Right then
+                AnimationName = "DoubleHook"
+                IdleAnimation = "DoubleGrappleIdle"
+            else
+                AnimationName = Hook .. "Hook"
+                IdleAnimation = Hook .. "GrappleIdle"
+            end
+
+            local Object = self._animations:PlayAnimation(AnimationName)
+
+            task.delay(Object.Length, function()
+                if self._hookTargets[Hook] then
+                    self._animations:PlayAnimation(IdleAnimation)
+                end
+                self._animations:StopAnimation(AnimationName)
+            end)
+        end)
+
         for _, Part in pairs(Player.Character:GetDescendants()) do
             if Part:IsA("BasePart") then
                 Part.Massless = true
@@ -348,6 +376,11 @@ function ODM:Boost(Target)
     end
 
     self.Boosting = Target
+
+    local NotTooFast = tick() - self._lastHooked < 1
+    if Target and self._hookTargets.Left and self._hookTargets.Right and NotTooFast then
+        self._animations:PlayAnimation("DoubleHook")
+    end
 end
 
 function ODM:_applyPhysics(dt)
@@ -370,7 +403,8 @@ function ODM:_applyPhysics(dt)
         return
     end
 
-    self._cameraController:UpdateDirection(self.DriftDirection)
+    local Speed = BodyVelocity.Velocity.Magnitude / (self.Properties.MaxSpeed * 2)
+    self._cameraController:UpdateDirection(self.DriftDirection * Speed)
 
     self:_boostEffect(self.Boosting)
 
@@ -388,7 +422,7 @@ function ODM:_applyPhysics(dt)
     BodyGyro.MaxTorque = Physics.BG.MaxTorque
     BodyGyro.CFrame = Physics.BG.CFrame
 
-    self.Speed = BodyVelocity.Velocity.Magnitude
+    self.Properties.Speed = BodyVelocity.Velocity.Magnitude
 end
 
 function ODM:_calculatePhysics()
@@ -433,7 +467,7 @@ function ODM:_calculatePhysics()
     local MaxForce = BodyVelocity.MaxForce:Lerp(MAX_BV_FORCE, .1)
     local Velocity
 
-    if BodyVelocity.Velocity.Unit:Dot(Direction) >= .8 then
+    if BodyVelocity.Velocity.Unit:Dot(Direction) >= .85 then
         Speed *= STRAIGHT_LINE_SPEED_MULT
     end
 
@@ -473,10 +507,17 @@ function ODM:_update(dt)
 
     local Velocity = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
     local TargetFOV = math.min(math.floor(70 + 30 * Velocity), 110)
+    self.DepthOfField.FarIntensity = Lerp(0, 0.2, Velocity)
 
     if not (self._hookTargets.Left or self._hookTargets.Right) then
         self._cameraController:UpdateDirection(0)
-        self.BodyVelocity.Velocity = self.BodyVelocity.Velocity:Lerp(Vector3.zero, 0.01)
+
+        local projected = dt * 60
+
+        self.BodyVelocity.MaxForce = self.BodyVelocity.MaxForce:Lerp(Vector3.zero, 0.1 * projected)
+        self.BodyVelocity.Velocity = self.BodyVelocity.Velocity:Lerp(Vector3.zero, 0.025 * projected)
+        self.BodyGyro.MaxTorque = Vector3.zero
+        self.Humanoid.PlatformStand = false
     end
 
     if self._targetFOV ~= TargetFOV then

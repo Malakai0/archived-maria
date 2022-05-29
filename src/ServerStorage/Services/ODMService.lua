@@ -65,7 +65,7 @@ function ODMService.Client:RequestODM(Client: Player)
     end
 
     local Character = Client.Character
-    local Root = Character and Character:WaitForChild("HumanoidRootPart")
+    local Root = Character and Character:WaitForChild("Torso")
 
     if not Root then
         return
@@ -115,8 +115,6 @@ function ODMService.Client:RequestBlades(Client: Player)
         Left = LeftBlade,
         Right = RightBlade
     }
-
-    return {LeftBlade, RightBlade}
 end
 
 function ODMService.Client:DestroyBlades(Client: Player)

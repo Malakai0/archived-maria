@@ -21,7 +21,7 @@ function ODMController:SetupCharacter()
     return Value
 end
 
-function ODMController:Spawned()
+function ODMController:EquipGear()
     local Character = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
 
     local Rig = self:SetupCharacter()
@@ -42,10 +42,10 @@ function ODMController:Spawned()
 end
 
 function ODMController:KnitStart()
-    self:Spawned()
+    self:EquipGear()
 
     Players.LocalPlayer.CharacterAdded:Connect(function()
-        self:Spawned()
+        self:EquipGear()
     end)
 end
 

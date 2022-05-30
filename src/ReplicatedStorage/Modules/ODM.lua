@@ -57,7 +57,7 @@ local function SetupBodyMovers()
     local BodyVelocity = Instance.new("BodyVelocity")
     BodyVelocity.MaxForce = Vector3.zero
     BodyVelocity.Velocity = Vector3.zero
-    BodyVelocity.P = 500
+    BodyVelocity.P = 1000
 
     local BodyGyro = Instance.new("BodyGyro")
     BodyGyro.MaxTorque = Vector3.zero
@@ -193,16 +193,14 @@ function ODM:Hold(Toggle)
     local BladeAmount = self.Equipment.Blades
 
     if Target and BladeAmount > 0 then
-        --// TODO: Hold animation
-
         local Divisible = BladeAmount % BLADES_PER_ARM == 0
         local BladeIndex = if Divisible then BLADES_PER_ARM else BladeAmount % BLADES_PER_ARM
 
         local LeftBladeVisual = Blades.Left:FindFirstChild(BladeIndex)
         local RightBladeVisual = Blades.Right:FindFirstChild(BladeIndex)
 
-
         self._animations:PlayAnimation("BladeChange")
+
         task.delay(0.4, function()
             self._odmService:RequestBlades():andThen(function()
                 LeftBladeVisual.Transparency, RightBladeVisual.Transparency = 1, 1
@@ -356,13 +354,13 @@ function ODM:Hook(Hook, Target)
                 AnimationName = "DoubleHook"
                 IdleAnimation = "DoubleGrappleIdle"
             else
-                AnimationName = Hook .. "Hook"
+                --AnimationName = Hook .. "Hook"
                 IdleAnimation = Hook .. "GrappleIdle"
             end
 
             local Object = self._animations:PlayAnimation(AnimationName)
 
-            task.delay(Object.Length, function()
+            task.delay(if Object then Object.Length else 0, function()
                 if self._hookTargets[Hook] then
                     self._animations:PlayAnimation(IdleAnimation)
                 end
@@ -390,7 +388,7 @@ function ODM:Boost(Target)
 
     self.Boosting = Target
 
-    local NotTooFast = tick() - self._lastHooked < 1
+    local NotTooFast = tick() - self._lastHooked < 1 and (not self._animations:IsPlaying("DoubleHook"))
     if Target and self._hookTargets.Left and self._hookTargets.Right and NotTooFast then
         self._animations:PlayAnimation("DoubleHook")
     end

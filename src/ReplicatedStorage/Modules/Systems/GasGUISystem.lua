@@ -32,6 +32,7 @@ local function GasGUISystem()
         end
 
         UpdateGas(GasGUI, ODM)
+
         ODM.GasChanged:Connect(function()
             UpdateGas(GasGUI, ODM)
         end)

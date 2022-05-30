@@ -14,6 +14,10 @@ function AnimationController:PlayAnimation(Animation: string, Speed: number, Loo
     Looped = Looped == true
     Speed = Speed or 1
 
+    if not Animation then
+        return
+    end
+
     local AnimationObject = Folder:FindFirstChild(Animation)
 
     if not AnimationObject then
@@ -48,6 +52,15 @@ function AnimationController:StopAnimation(Animation: string)
 
     local Track: AnimationTrack = self._cache[Animation]
     Track:Stop(0.25)
+end
+
+function AnimationController:IsPlaying(Animation: string)
+    if not self._cache[Animation] then
+        return false
+    end
+
+    local Track: AnimationTrack = self._cache[Animation]
+    return Track.IsPlaying == true
 end
 
 function AnimationController:ClearBadCache()

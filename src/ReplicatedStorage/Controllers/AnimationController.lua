@@ -10,10 +10,7 @@ local AnimationController = Knit.CreateController({
 
 local Folder = ReplicatedStorage.Animations
 
-function AnimationController:PlayAnimation(Animation: string, Speed: number, Looped: boolean): AnimationTrack?
-    Looped = Looped == true
-    Speed = Speed or 1
-
+function AnimationController:LoadToCache(Animation: string)
     if not Animation then
         return
     end
@@ -25,7 +22,7 @@ function AnimationController:PlayAnimation(Animation: string, Speed: number, Loo
         return
     end
 
-    local Humanoid = Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+    local Humanoid = Players.LocalPlayer.Character:WaitForChild("Humanoid")
     local Animator = Humanoid and Humanoid:FindFirstChild("Animator")
 
     if not Animator then
@@ -37,10 +34,23 @@ function AnimationController:PlayAnimation(Animation: string, Speed: number, Loo
         self._cache[Animation] = Animator:LoadAnimation(AnimationObject)
     end
 
+    return true
+end
+
+function AnimationController:PlayAnimation(Animation: string, StartAt: number, Speed: number, Looped: boolean): AnimationTrack?
+    Looped = Looped == true
+    Speed = Speed or 1
+    StartAt = StartAt or 0
+
+    if not self:LoadToCache(Animation) then
+        return
+    end
+
     local Track: AnimationTrack = self._cache[Animation]
     Track.Looped = Looped
     Track:AdjustSpeed(Speed)
     Track:Play(0.25)
+    Track.TimePosition = StartAt
 
     return Track
 end

@@ -1,5 +1,4 @@
 local Players = game:GetService("Players")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BLADES_PER_SIDE = 4
@@ -8,8 +7,9 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local RigHelper = require(ReplicatedStorage.Source.Modules.Helper.RigHelper)
 
-local RigPrefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Black Dawn")
-local BladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Black Dawn")
+local RigPrefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Murica Gear")
+local LeftBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Murica Red")
+local RightBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Murica Blue")
 
 local ODMService = Knit.CreateService({
     Name = "ODMService",
@@ -101,8 +101,8 @@ function ODMService.Client:RequestBlades(Client: Player)
         return CurrentBlade
     end
 
-    local LeftBlade = BladePrefab:Clone()
-    local RightBlade = BladePrefab:Clone()
+    local LeftBlade = LeftBladePrefab:Clone()
+    local RightBlade = RightBladePrefab:Clone()
 
     LeftBlade:SetAttribute("Side", "Left")
     RightBlade:SetAttribute("Side", "Right")

@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
+local ContentProvider = game:GetService("ContentProvider")
 local Players = game:GetService("Players")
 
 local FOV_TWEEN = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
@@ -92,14 +93,13 @@ function ODM.new(ODMRig)
 
         DepthOfField = Lighting.DepthOfField,
 
+        DriftDirection = 0,
         Holding = false,
         Equipped = false,
         Sprinting = false,
         Boosting = false,
-        DriftDirection = 0,
 
         Blades = {},
-
         Hooks = {},
 
         Hooking = {
@@ -124,8 +124,10 @@ function ODM.new(ODMRig)
         _targetTilt = 0,
         _lastHooked = 0,
         _targetFOV = workspace.CurrentCamera.FieldOfView,
+
         _hookTargets = {},
         _fx = {},
+
         _rng = Random.new(),
         _inputManager = InputManager.new(),
 
@@ -135,6 +137,14 @@ function ODM.new(ODMRig)
     }
 
     setmetatable(self, ODM)
+
+    local IDs = {}
+    for _, Animation in pairs(ReplicatedStorage.Animations:GetChildren()) do
+        table.insert(IDs, Animation.AnimationId)
+        self._animations:LoadToCache(Animation.Name)
+    end
+
+    ContentProvider:PreloadAsync(IDs)
 
     self._inputManager:AddKeybind("Equip", Enum.KeyCode.One)
     self._inputManager:AddKeybind("Hold", Enum.KeyCode.R)
@@ -268,6 +278,7 @@ function ODM:Hook(Hook, Target)
     if not Target then
         self.Hooking[Hook] = true
 
+        self._animations:StopAnimation("InitialDoubleGrapple")
         self._animations:StopAnimation("DoubleHook")
         self._animations:StopAnimation("DoubleGrappleIdle")
         self._animations:StopAnimation(Hook .. "GrappleIdle")
@@ -348,24 +359,8 @@ function ODM:Hook(Hook, Target)
             return
         end
 
-        local AnimationName, IdleAnimation
         task.delay(HOOK_LENGTH, function()
-            if self._hookTargets.Left and self._hookTargets.Right then
-                AnimationName = "DoubleHook"
-                IdleAnimation = "DoubleGrappleIdle"
-            else
-                --AnimationName = Hook .. "Hook"
-                IdleAnimation = Hook .. "GrappleIdle"
-            end
-
-            local Object = self._animations:PlayAnimation(AnimationName)
-
-            task.delay(if Object then Object.Length else 0, function()
-                if self._hookTargets[Hook] then
-                    self._animations:PlayAnimation(IdleAnimation)
-                end
-                self._animations:StopAnimation(AnimationName)
-            end)
+            self:_playHookAnimation(Hook)
         end)
 
         for _, Part in pairs(Player.Character:GetDescendants()) do
@@ -416,7 +411,7 @@ function ODM:_applyPhysics(dt)
 
     self:_boostEffect(self.Boosting)
 
-    local GasDecrement = (GAS_PER_FRAME * 60 * dt)
+    local GasDecrement = GAS_PER_FRAME * 60 * dt
 
     if self.Boosting then
         GasDecrement *= BOOST_GAS_MULTIPLIER
@@ -653,6 +648,32 @@ function ODM:_cleanupHookFX(Identifier)
     end
 
     Wire.Enabled = false
+end
+
+function ODM:_playHookAnimation(Hook)
+    local AnimationName, IdleAnimation, StartAt = nil, nil, 0
+
+    if self._hookTargets.Left and self._hookTargets.Right then
+        StartAt = 0.2
+        AnimationName = "DoubleHook"
+        IdleAnimation = "DoubleGrappleIdle"
+        self._animations:PlayAnimation("InitialDoubleGrapple", 0.2)
+        task.wait(.2)
+        self._animations:StopAnimation("InitialDoubleGrapple")
+    else
+        --AnimationName = Hook .. "Hook"
+        IdleAnimation = Hook .. "GrappleIdle"
+    end
+
+    local Object = self._animations:PlayAnimation(AnimationName, StartAt)
+
+    task.delay(if Object then Object.Length else 0, function()
+        if self._hookTargets[Hook] then
+            self._animations:PlayAnimation(IdleAnimation)
+        end
+
+        self._animations:StopAnimation(AnimationName)
+    end)
 end
 
 function ODM:_createAttachment(Name)

@@ -198,11 +198,12 @@ function ODM:Hold(Toggle)
         local LeftBladeVisual = Blades.Left:FindFirstChild(BladeIndex)
         local RightBladeVisual = Blades.Right:FindFirstChild(BladeIndex)
 
-        LeftBladeVisual.Transparency, RightBladeVisual.Transparency = 1, 1
 
         self._animations:PlayAnimation("BladeChange")
         task.delay(0.4, function()
-            self._odmService:RequestBlades()
+            self._odmService:RequestBlades():andThen(function()
+                LeftBladeVisual.Transparency, RightBladeVisual.Transparency = 1, 1
+            end)
         end)
 
         self.Equipment.Blades -= 1
@@ -270,11 +271,16 @@ function ODM:Hook(Hook, Target)
         self._animations:StopAnimation("DoubleGrappleIdle")
         self._animations:StopAnimation(Hook .. "GrappleIdle")
 
+        local AnyHooks = self._hookTargets.Left or self._hookTargets.Right
+
+        if not AnyHooks and tick() - self._lastHooked > 1 then
+            self._animations:PlayAnimation(Hook .. "Hook")
+        end
+
         self:_retractHookFX(Hook)
         self.Hooks[Hook] = nil
-        self.Humanoid.PlatformStand = false
 
-        local AnyHooks = self._hookTargets.Left or self._hookTargets.Right
+        self.Humanoid.PlatformStand = false
 
         if self._connection and not AnyHooks then
             self._connection:Disconnect()
@@ -305,6 +311,8 @@ function ODM:Hook(Hook, Target)
         return
     end
 
+    self._lastHooked = tick()
+
     if not self:CanHook() then
         return
     end
@@ -314,10 +322,8 @@ function ODM:Hook(Hook, Target)
         return
     end
 
-    self._lastHooked = tick()
-
     self.Hooking[Hook] = true
-    self.Equipment.Gas -= 1 --// Initial cost of hooking
+    self.Equipment.Gas -= GAS_PER_FRAME * 2 --// Initial cost of hooking
 
     self:Boost(false)
     self:_boostEffect(false)
@@ -587,7 +593,7 @@ function ODM:_createHookFX(Identifier, Destination)
             Wire.CurveSize0 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
             Wire.CurveSize1 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
 
-            DestinationA.WorldPosition = OriginA.WorldPosition:Lerp(Destination, i)
+            DestinationA.WorldPosition = OriginA.WorldPosition:Lerp(Destination, math.clamp(i, 0, 1))
 
             task.wait(HOOK_HALT)
         end
@@ -625,7 +631,7 @@ function ODM:_retractHookFX(Identifier)
             Wire.CurveSize0 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
             Wire.CurveSize1 = self._rng:NextNumber(-HOOK_SPREAD, HOOK_SPREAD) * Inversed
 
-            DestinationA.WorldPosition = OriginalPosition:Lerp(OriginA.WorldPosition, i)
+            DestinationA.WorldPosition = OriginalPosition:Lerp(OriginA.WorldPosition, math.clamp(i, 0, 1))
 
             task.wait(HOOK_HALT)
         end

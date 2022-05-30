@@ -8,8 +8,8 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local RigHelper = require(ReplicatedStorage.Source.Modules.Helper.RigHelper)
 
-local RigPrefab = ReplicatedStorage.Objects.ODM.Default
-local BladePrefab = ReplicatedStorage.Objects.Blades.Default
+local RigPrefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Black Dawn")
+local BladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Black Dawn")
 
 local ODMService = Knit.CreateService({
     Name = "ODMService",
@@ -75,7 +75,7 @@ function ODMService.Client:RequestODM(Client: Player)
         return
     end
 
-    local Rig = RigPrefab.MainRig:Clone()
+    local Rig = RigPrefab:Clone()
 
     RigHelper.WeldToCharacter(Rig, Character)
 

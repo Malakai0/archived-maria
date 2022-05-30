@@ -26,14 +26,15 @@ local function GasGUISystem()
         GasGUI = GUI
     end)
 
-    RunService:BindToRenderStep("GasGUISystem", Enum.RenderPriority.First.Value, function()
-        local ODM = ODMController:GetODM()
-
-        if not (ODM and GasGUI) then
+    ODMController.ODMChanged:Connect(function(ODM)
+        if not (GasGUI and ODM) then
             return
         end
 
         UpdateGas(GasGUI, ODM)
+        ODM.GasChanged:Connect(function()
+            UpdateGas(GasGUI, ODM)
+        end)
     end)
 end
 

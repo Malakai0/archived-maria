@@ -39,6 +39,7 @@ RAY_PARAMS.FilterType = Enum.RaycastFilterType.Whitelist
 RAY_PARAMS.FilterDescendantsInstances = {workspace.Map}
 
 local Knit = require(ReplicatedStorage.Packages.Knit)
+local Signal = require(ReplicatedStorage.Packages.Signal)
 
 local PrioritizedIf = require(ReplicatedStorage.Source.Modules.Helper.PrioritizedIf)
 local EmbeddedIf = require(ReplicatedStorage.Source.Modules.Helper.EmbeddedIf)
@@ -81,6 +82,8 @@ function ODM.new(ODMRig)
         Character = Player.Character,
         Humanoid = Player.Character:WaitForChild("Humanoid"),
         Root = RootPart,
+
+        GasChanged = Signal.new(),
 
         Rig = ODMRig,
         Main = ODMRig.Main,
@@ -325,6 +328,8 @@ function ODM:Hook(Hook, Target)
     self.Hooking[Hook] = true
     self.Equipment.Gas -= GAS_PER_FRAME * 2 --// Initial cost of hooking
 
+    self.GasChanged:Fire()
+
     self:Boost(false)
     self:_boostEffect(false)
 
@@ -420,6 +425,7 @@ function ODM:_applyPhysics(dt)
     end
 
     self.Equipment.Gas = math.max(self.Equipment.Gas - GasDecrement, 0)
+    self.GasChanged:Fire()
 
     BodyVelocity.MaxForce = Physics.BV.MaxForce
     BodyVelocity.Velocity = Physics.BV.Velocity
@@ -617,7 +623,6 @@ function ODM:_retractHookFX(Identifier)
 
     local OriginalPosition = DestinationA.WorldPosition
 
-    --// REPLICATION : once again malk, you're welcome!
     self._odmService:RequestODMEffect(false, Identifier)
 
     task.spawn(function()
@@ -689,6 +694,7 @@ end
 function ODM:Destroy()
     self._inputManager:Destroy()
     self.Rig:Destroy()
+    self.GasChanged:Destroy()
 
     RunService:UnbindFromRenderStep("ODMUpdate")
 

@@ -1,14 +1,16 @@
 local Players = game:GetService("Players")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Knit = require(ReplicatedStorage.Packages.Knit)
+local Signal = require(ReplicatedStorage.Packages.Signal)
 
 local ODM = require(ReplicatedStorage.Source.Modules.ODM)
 
 local ODMController = Knit.CreateController({
     Name = "ODMController",
-    _currentODM = nil
+    ODMChanged = Signal.new(),
+
+    _currentODM = nil,
 })
 
 function ODMController:GetODM()
@@ -36,6 +38,7 @@ function ODMController:EquipGear()
     end
 
     self._currentODM = ODM.new(Rig)
+    self.ODMChanged:Fire(self._currentODM)
 
     Character.Humanoid.Died:Connect(function()
         self._currentODM:Destroy()

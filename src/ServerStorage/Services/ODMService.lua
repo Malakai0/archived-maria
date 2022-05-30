@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BLADES_PER_SIDE = 4
@@ -12,7 +13,9 @@ local BladePrefab = ReplicatedStorage.Objects.Blades.Default
 
 local ODMService = Knit.CreateService({
     Name = "ODMService",
-    Client = {},
+    Client = {
+        ODMEffectRequested = Knit.CreateSignal(),
+    },
 
     _odms = {},
     _blades = {},
@@ -158,6 +161,29 @@ end
 
 function ODMService:ClientLeaving(Client: Player)
     self._bladeCount[Client] = nil
+end
+
+function ODMService.Client:RequestODMEffect(_, LocalClient: Player, Type: string, Identifier: string, Wire: RopeConstraint, OriginA: Attachment, Destination: Vector3?)
+    local ODM = self.Server._odms[LocalClient]
+
+    local RealAttachment = ODM.Main:FindFirstChild(Identifier .. "Hook")
+    local RealWire = ODM.Main:FindFirstChild(Identifier .. "Wire")
+    
+    if Wire ~= RealWire then
+        return warn("Not real wire")
+    end
+    
+    --// Exploiter Leniency ;)
+    local Magnitude = (RealAttachment.WorldPosition - OriginA.WorldPosition).Magnitude
+    if Magnitude > 15 then
+        return warn("Magnitude error")
+    end
+
+    for _, Client in next, Players:GetPlayers() do
+        if Client ~= LocalClient then
+            self.ODMEffectRequested:Fire(Client, LocalClient, Client, Type, Wire, OriginA, Destination)
+        end
+    end
 end
 
 function ODMService:KnitInit()

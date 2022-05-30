@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Knit = require(ReplicatedStorage.Packages.Knit)
@@ -46,6 +47,30 @@ function ODMController:KnitStart()
 
     Players.LocalPlayer.CharacterAdded:Connect(function()
         self:EquipGear()
+    end)
+
+    local ODMService = Knit.GetService("ODMService")
+
+    ODMService.ODMEffectRequested:Connect(function(Caller: Player, Client: Player, Type: string, Wire: RopeConstraint, OriginA: Attachment, DestinationVector: Vector3?)
+        if Type == "Create" then
+
+            local Destination = Instance.new("Attachment")
+            Destination.Parent = OriginA:FindFirstAncestorOfClass("BasePart")
+            Destination.WorldPosition = DestinationVector
+            Destination.Name = "DestinationAttachment"
+
+            Wire.Attachment0 = OriginA
+            Wire.Attachment1 = Destination
+            Wire.Enabled = true
+
+        elseif Type == "Retract" then
+
+            local Attachment = Wire.Attachment1
+            Attachment:Destroy()
+
+            Wire.Enabled = false
+
+        end
     end)
 end
 

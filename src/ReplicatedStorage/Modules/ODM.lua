@@ -569,7 +569,8 @@ function ODM:_createHookFX(Identifier, Destination)
     local DestinationA = self:_createAttachment(Identifier)
 
     self:_configureAttachment(DestinationA, workspace.Terrain, Destination)
-    --// TODO: Replicate
+    --// REPLICATION : thank me later malakai ;)
+    self._odmService:RequestODMEffect(Player, "Create", Identifier, Wire, OriginA, Destination)
 
     Wire.Attachment0 = OriginA
     Wire.Attachment1 = DestinationA
@@ -611,7 +612,9 @@ function ODM:_retractHookFX(Identifier)
 
     local OriginalPosition = DestinationA.WorldPosition
 
-    --// TODO: Replicate this too
+    --// REPLICATION : once again malk, you're welcome!
+    self._odmService:RequestODMEffect(Player, "Retract", Identifier, Wire, OriginA, nil)
+
     task.spawn(function()
         for i = 0, 1, HOOK_STEPS do
             if not (OriginA and DestinationA) or self._hookTargets[Identifier] then

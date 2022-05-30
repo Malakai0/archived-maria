@@ -504,24 +504,24 @@ end
 function ODM:_update(dt)
     local Camera = workspace.CurrentCamera
 
+    local ProjectedDT = dt * 60
     local NoHooks = not (self._hookTargets.Left or self._hookTargets.Right)
 
-    local Velocity = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
-    local TargetFOV = math.min(math.floor(70 + 30 * Velocity), 110)
+    local NormalizedRelative = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
+    local TiltSpeed = if NoHooks then 0 else self.BodyVelocity.Velocity.Magnitude / (self.Properties.MaxSpeed * 2)
+
+    local TargetFOV = math.min(math.floor(70 + 30 * NormalizedRelative), 110)
     local TiltTarget = self.DriftDirection * TILT_MULT
-    local Speed = if NoHooks then 0 else self.BodyVelocity.Velocity.Magnitude / (self.Properties.MaxSpeed * 2)
-    local Tilt = TiltTarget * Speed * (dt * 60)
+    local Tilt = TiltTarget * TiltSpeed * ProjectedDT
 
-    self.DepthOfField.FarIntensity = Lerp(0, 0.2, Velocity)
+    self.DepthOfField.FarIntensity = Lerp(0, 0.2, NormalizedRelative)
+
     self._targetTilt = Tilt
-
-    self._cameraController:UpdateDirection(self._targetTilt)
+    self._cameraController:UpdateTilt(self._targetTilt)
 
     if NoHooks then
-        local projected = dt * 60
-
-        self.BodyVelocity.MaxForce = self.BodyVelocity.MaxForce:Lerp(Vector3.zero, 0.1 * projected)
-        self.BodyVelocity.Velocity = self.BodyVelocity.Velocity:Lerp(Vector3.zero, 0.025 * projected)
+        self.BodyVelocity.MaxForce = self.BodyVelocity.MaxForce:Lerp(Vector3.zero, 0.1 * ProjectedDT)
+        self.BodyVelocity.Velocity = self.BodyVelocity.Velocity:Lerp(Vector3.zero, 0.025 * ProjectedDT)
         self.BodyGyro.MaxTorque = Vector3.zero
         self.Humanoid.PlatformStand = false
     end

@@ -16,7 +16,7 @@ function CameraController:Update(dt)
     Camera.Update(workspace.CurrentCamera, Players.LocalPlayer.Character, dt)
 end
 
-function CameraController:UpdateDirection(Direction)
+function CameraController:UpdateTilt(Direction)
     Camera.UpdateTilt(Delta, Direction * 2)
 end
 

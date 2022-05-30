@@ -20,6 +20,7 @@ local ODMService = Knit.CreateService({
     _odms = {},
     _blades = {},
     _bladeCount = {},
+    _hooks = {Left = {}, Right = {}},
 })
 
 function ODMService.Client:RequestHoldHandles(Client: Player)
@@ -161,27 +162,41 @@ end
 
 function ODMService:ClientLeaving(Client: Player)
     self._bladeCount[Client] = nil
+    self._odms[Client] = nil
+    self._blades[Client] = nil
+    self._hooks.Left[Client] = nil
+    self._hooks.Right[Client] = nil
 end
 
-function ODMService.Client:RequestODMEffect(_, LocalClient: Player, Type: string, Identifier: string, Wire: RopeConstraint, OriginA: Attachment, Destination: Vector3?)
-    local ODM = self.Server._odms[LocalClient]
-
-    local RealAttachment = ODM.Main:FindFirstChild(Identifier .. "Hook")
-    local RealWire = ODM.Main:FindFirstChild(Identifier .. "Wire")
-    
-    if Wire ~= RealWire then
-        return warn("Not real wire")
-    end
-    
-    --// Exploiter Leniency ;)
-    local Magnitude = (RealAttachment.WorldPosition - OriginA.WorldPosition).Magnitude
-    if Magnitude > 15 then
-        return warn("Magnitude error")
+function ODMService.Client:RequestODMEffect(Client: Player, Type: boolean, Identifier: string, Destination: Vector3)
+    if type(Type) ~= "boolean" or (Type and not Destination) then
+        return
     end
 
-    for _, Client in next, Players:GetPlayers() do
-        if Client ~= LocalClient then
-            self.ODMEffectRequested:Fire(Client, LocalClient, Client, Type, Wire, OriginA, Destination)
+    if Identifier ~= "Left" and Identifier ~= "Right" then
+        return
+    end
+
+    local FailCase1 = not self.Server._hooks[Identifier][Client] and Type == false
+    local FailCase2 = self.Server._hooks[Identifier][Client] and Type == true
+    local ODM = self.Server._odms[Client]
+
+    if not ODM then
+        return
+    end
+
+    if FailCase1 or FailCase2 then
+        return
+    end
+
+    self.Server._hooks[Identifier][Client] = Type
+
+    local Attachment = ODM.Main:FindFirstChild(Identifier .. "Hook")
+    local Wire = ODM.Main:FindFirstChild(Identifier .. "Wire")
+
+    for _, Target in pairs(Players:GetPlayers()) do
+        if Target ~= Client then
+            self.ODMEffectRequested:Fire(Target, Type, Wire, Attachment, Destination)
         end
     end
 end

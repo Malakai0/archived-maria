@@ -51,25 +51,21 @@ function ODMController:KnitStart()
 
     local ODMService = Knit.GetService("ODMService")
 
-    ODMService.ODMEffectRequested:Connect(function(Caller: Player, Client: Player, Type: string, Wire: RopeConstraint, OriginA: Attachment, DestinationVector: Vector3?)
-        if Type == "Create" then
-
-            local Destination = Instance.new("Attachment")
-            Destination.Parent = OriginA:FindFirstAncestorOfClass("BasePart")
-            Destination.WorldPosition = DestinationVector
-            Destination.Name = "DestinationAttachment"
+    ODMService.ODMEffectRequested:Connect(function(Type: boolean, Wire: Beam, OriginA: Attachment, Destination: Vector3)
+        if Type and Destination then
+            local DestinationA = Instance.new("Attachment")
+            DestinationA.Parent = workspace.Terrain
+            DestinationA.WorldPosition = Destination
+            DestinationA.Name = "DestinationAttachment"
 
             Wire.Attachment0 = OriginA
-            Wire.Attachment1 = Destination
+            Wire.Attachment1 = DestinationA
             Wire.Enabled = true
-
-        elseif Type == "Retract" then
-
+        else
             local Attachment = Wire.Attachment1
             Attachment:Destroy()
 
             Wire.Enabled = false
-
         end
     end)
 end

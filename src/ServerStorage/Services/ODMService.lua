@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BLADES_PER_SIDE = 4
@@ -142,6 +143,8 @@ function ODMService:DestroyBlade(Client: Player, Blade: BasePart)
     local Handle = self:GetHandleForBlade(Client, Blade)
 
     RigHelper.UnweldBladeToHandle(Handle)
+
+    Debris:AddItem(Blade, 5)
 end
 
 function ODMService:GetHandleForBlade(Client: Player, Blade: BasePart)

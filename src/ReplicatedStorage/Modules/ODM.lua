@@ -91,7 +91,7 @@ function ODM.new(ODMRig)
         BodyVelocity = BodyVelocity,
         BodyGyro = BodyGyro,
 
-        DepthOfField = Lighting.DepthOfField,
+        DepthOfField = Lighting:FindFirstChild("DepthOfField"),
 
         DriftDirection = 0,
         Holding = false,
@@ -126,6 +126,7 @@ function ODM.new(ODMRig)
         _targetFOV = workspace.CurrentCamera.FieldOfView,
 
         _hookTargets = {},
+        _hookPositions = {},
         _fx = {},
 
         _rng = Random.new(),
@@ -284,8 +285,11 @@ function ODM:Hook(Hook, Target)
         self._animations:StopAnimation(Hook .. "GrappleIdle")
 
         local AnyHooks = self._hookTargets.Left or self._hookTargets.Right
+        local SuccessfulHook = self._hookPositions[Hook] ~= nil
 
-        if not AnyHooks and tick() - self._lastHooked > 1 then
+        self._hookPositions[Hook] = nil
+
+        if not AnyHooks and tick() - self._lastHooked > 1 and SuccessfulHook then
             self._animations:PlayAnimation(Hook .. "Hook")
         end
 
@@ -303,8 +307,8 @@ function ODM:Hook(Hook, Target)
             self:_gasEffect(false)
         end
 
-        task.delay(HOOK_LENGTH * 2, function()
-            if self._hookTargets[Hook] then
+        task.delay(HOOK_LENGTH, function()
+            if self._hookTargets[Hook] and self._hookPositions[Hook] then
                 return
             end
 
@@ -330,6 +334,9 @@ function ODM:Hook(Hook, Target)
     end
 
     local HookPosition = self:_getHookTarget()
+
+    self._hookPositions[Hook] = HookPosition
+
     if not HookPosition then
         return
     end
@@ -347,7 +354,25 @@ function ODM:Hook(Hook, Target)
     end
 
     local ActualHook = self:_createHookFX(Hook, HookPosition)
+    local Interuptted = false
+
+    task.spawn(function()
+        local Start = tick()
+        repeat
+            if not self._hookTargets[Hook] then
+                Interuptted = true
+                break
+            end
+            task.wait()
+        until tick() - Start >= HOOK_LENGTH
+    end)
+
     task.delay(HOOK_LENGTH, function()
+        if Interuptted then
+            print("int")
+            return
+        end
+
         self.Hooking[Hook] = false
         self.Hooks[Hook] = ActualHook.Attachment1
 
@@ -383,7 +408,7 @@ function ODM:Boost(Target)
 
     self.Boosting = Target
 
-    local NotTooFast = tick() - self._lastHooked < 1 and (not self._animations:IsPlaying("DoubleHook"))
+    local NotTooFast = tick() - self._lastHooked > 1 and (not self._animations:IsPlaying("DoubleHook"))
     if Target and self._hookTargets.Left and self._hookTargets.Right and NotTooFast then
         self._animations:PlayAnimation("DoubleHook")
     end
@@ -510,7 +535,7 @@ function ODM:_update(dt)
     local Camera = workspace.CurrentCamera
 
     local ProjectedDT = dt * 60
-    local NoHooks = not (self._hookTargets.Left or self._hookTargets.Right)
+    local NoHooks = not (self._hookPositions.Left or self._hookPositions.Right)
 
     local NormalizedRelative = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
     local TiltSpeed = if NoHooks then 0 else self.BodyVelocity.Velocity.Magnitude / (self.Properties.MaxSpeed * 2)
@@ -519,7 +544,9 @@ function ODM:_update(dt)
     local TiltTarget = self.DriftDirection * TILT_MULT
     local Tilt = TiltTarget * TiltSpeed * ProjectedDT
 
-    self.DepthOfField.FarIntensity = Lerp(0, 0.2, NormalizedRelative)
+    if self.DepthOfField then
+        self.DepthOfField.FarIntensity = Lerp(0, 0.2, NormalizedRelative)
+    end
 
     self._targetTilt = Tilt
     self._cameraController:UpdateTilt(self._targetTilt)
@@ -655,8 +682,10 @@ function ODM:_playHookAnimation(Hook)
 
     if self._hookTargets.Left and self._hookTargets.Right then
         StartAt = 0.2
+
         AnimationName = "DoubleHook"
         IdleAnimation = "DoubleGrappleIdle"
+
         self._animations:PlayAnimation("InitialDoubleGrapple", 0.2)
         task.wait(.2)
         self._animations:StopAnimation("InitialDoubleGrapple")
@@ -668,8 +697,8 @@ function ODM:_playHookAnimation(Hook)
     local Object = self._animations:PlayAnimation(AnimationName, StartAt)
 
     task.delay(if Object then Object.Length else 0, function()
-        if self._hookTargets[Hook] then
-            self._animations:PlayAnimation(IdleAnimation)
+        if self._hookPositions[Hook] then
+            self._animations:PlayAnimation(IdleAnimation, 0, 1, true)
         end
 
         self._animations:StopAnimation(AnimationName)

@@ -54,10 +54,10 @@ function ODMController:KnitStart()
 
     local ODMService = Knit.GetService("ODMService")
 
-    ODMService.ODMEffectRequested:Connect(function(Type: boolean, Wire: Beam, OriginA: Attachment, Destination: Vector3)
+    ODMService.ODMEffectRequested:Connect(function(Type: boolean, Part: BasePart, Wire: Beam, OriginA: Attachment, Destination: Vector3)
         if Type and Destination then
             local DestinationA = Instance.new("Attachment")
-            DestinationA.Parent = workspace.Terrain
+            DestinationA.Parent = Part
             DestinationA.WorldPosition = Destination
             DestinationA.Name = "DestinationAttachment"
 

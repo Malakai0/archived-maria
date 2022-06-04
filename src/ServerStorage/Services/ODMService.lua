@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local Debris = game:GetService("Debris")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BLADES_PER_SIDE = 4
@@ -8,9 +9,9 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local RigHelper = require(ReplicatedStorage.Source.Modules.Helper.RigHelper)
 
-local RigPrefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Murica Gear")
-local LeftBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Murica Red")
-local RightBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Murica Blue")
+local RigPrefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Malakai Gear")
+local LeftBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Blue Blade")
+local RightBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Blue Blade")
 
 local ODMService = Knit.CreateService({
     Name = "ODMService",
@@ -63,6 +64,12 @@ function ODMService.Client:RequestStopHoldingHandles(Client: Player)
 end
 
 function ODMService.Client:RequestODM(Client: Player)
+	local Prefab = RigPrefab
+
+	if Client.UserId == 210597647 then
+		Prefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Val Gear")
+	end
+
     local CurrentODM = self.Server._odms[Client]
 
     if CurrentODM and CurrentODM.Parent then
@@ -76,7 +83,7 @@ function ODMService.Client:RequestODM(Client: Player)
         return
     end
 
-    local Rig = RigPrefab:Clone()
+    local Rig = Prefab:Clone()
 
     RigHelper.WeldToCharacter(Rig, Character)
 
@@ -102,8 +109,14 @@ function ODMService.Client:RequestBlades(Client: Player)
         return CurrentBlade
     end
 
-    local LeftBlade = LeftBladePrefab:Clone()
-    local RightBlade = RightBladePrefab:Clone()
+	local Left, Right = LeftBladePrefab, RightBladePrefab
+
+	if Client.UserId == 210597647 then
+		Left, Right = ReplicatedStorage.Objects.Blades:FindFirstChild("Red Blade"), ReplicatedStorage.Objects.Blades:FindFirstChild("Red Blade")
+	end
+
+    local LeftBlade = Left:Clone()
+    local RightBlade = Right:Clone()
 
     LeftBlade:SetAttribute("Side", "Left")
     RightBlade:SetAttribute("Side", "Right")
@@ -171,8 +184,16 @@ function ODMService:ClientLeaving(Client: Player)
     self._hooks.Right[Client] = nil
 end
 
-function ODMService.Client:RequestODMEffect(Client: Player, Type: boolean, Identifier: string, Destination: Vector3)
+function ODMService.Client:RequestODMEffect(Client: Player, Type: boolean, Identifier: string, Part: BasePart, Destination: Vector3)
     if type(Type) ~= "boolean" or (Type and not Destination) then
+        return
+    end
+
+    if Type and not (typeof(Part) == "Instance" and Part:IsA("BasePart")) then
+        return
+    end
+
+    if Type and not (Part:IsDescendantOf(workspace.Entities) or Part:IsDescendantOf(workspace.Map)) then
         return
     end
 
@@ -199,9 +220,36 @@ function ODMService.Client:RequestODMEffect(Client: Player, Type: boolean, Ident
 
     for _, Target in pairs(Players:GetPlayers()) do
         if Target ~= Client then
-            self.ODMEffectRequested:Fire(Target, Type, Wire, Attachment, Destination)
+            self.ODMEffectRequested:Fire(Target, Type, Part, Wire, Attachment, Destination)
         end
     end
+end
+
+function ODMService:SolveHitboxExtension(Velocity: Vector3)
+    return Vector3.new(math.abs(Velocity.X), math.abs(Velocity.Y), math.abs(Velocity.Z)) --// make it better soon
+end
+
+function ODMService:UpdateHitboxes()
+    local PlayerService = Knit.GetService("PlayerService")
+
+    for _, Client in pairs(Players:GetPlayers()) do
+        if not (Client.Character and Client.Character.Parent == workspace.Entities) then
+            continue
+        end
+
+        if self._hooks.Left[Client] or self._hooks.Right[Client] then
+            local HitboxSize = self:SolveHitboxExtension(Client.Character.Torso.AssemblyLinearVelocity)
+            PlayerService:ExtendHitbox(Client.Character, HitboxSize)
+        else
+            PlayerService:UnextendHitbox(Client.Character)
+        end
+    end
+end
+
+function ODMService:KnitStart()
+    --[[RunService.Heartbeat:Connect(function()
+        self:UpdateHitboxes()
+    end)]] --// Not necessary (for now?)
 end
 
 function ODMService:KnitInit()

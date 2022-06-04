@@ -30,14 +30,12 @@ local BOOST_MULTIPLIER = 0.1
 local GAS_PER_FRAME = 1
 local BOOST_GAS_MULTIPLIER = 3
 
-local MAX_GAS = 10000
-local MAX_BV_FORCE = Vector3.new(30000, 20000, 30000)
-local MAX_BG_TORQUE = Vector3.one * 100000000
+local MAX_GAS = math.huge
+local MAX_BV_FORCE = 30000
 
 local RAY_PARAMS = RaycastParams.new()
 RAY_PARAMS.IgnoreWater = true
 RAY_PARAMS.FilterType = Enum.RaycastFilterType.Whitelist
-RAY_PARAMS.FilterDescendantsInstances = {workspace.Map}
 
 local Knit = require(ReplicatedStorage.Packages.Knit)
 local Signal = require(ReplicatedStorage.Packages.Signal)
@@ -55,20 +53,29 @@ end
 local function SetupBodyMovers()
     local RootPart = Player.Character.HumanoidRootPart
 
-    local BodyVelocity = Instance.new("BodyVelocity")
-    BodyVelocity.MaxForce = Vector3.zero
-    BodyVelocity.Velocity = Vector3.zero
-    BodyVelocity.P = 1000
+	local A0 = Instance.new("Attachment")
+	A0.Parent = RootPart
 
-    local BodyGyro = Instance.new("BodyGyro")
-    BodyGyro.MaxTorque = Vector3.zero
-    BodyGyro.P = 500
-    BodyGyro.D = 50
+	local AlignA0 = Instance.new("Attachment")
+	AlignA0.Parent = RootPart
 
-    BodyVelocity.Parent = RootPart
-    BodyGyro.Parent = RootPart
+    local LinearVelocity = Instance.new("LinearVelocity")
+	LinearVelocity.Attachment0 = A0
+	LinearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+    LinearVelocity.VectorVelocity = Vector3.zero
+	LinearVelocity.MaxForce = 0
 
-    return BodyVelocity, BodyGyro
+    local AlignOrientation = Instance.new("AlignOrientation")
+	AlignOrientation.Responsiveness = 100
+	AlignOrientation.MaxTorque = 1000000000
+	AlignOrientation.AlignType = Enum.AlignType.Parallel
+	AlignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	AlignOrientation.Attachment0 = AlignA0
+
+    LinearVelocity.Parent = RootPart
+    AlignOrientation.Parent = RootPart
+
+    return LinearVelocity, AlignOrientation
 end
 
 local ODM = {}
@@ -77,7 +84,7 @@ ODM.__index = ODM
 function ODM.new(ODMRig)
     local RootPart = Player.Character:WaitForChild("HumanoidRootPart")
 
-    local BodyVelocity, BodyGyro = SetupBodyMovers()
+    local LinearVelocity, AlignOrientation = SetupBodyMovers()
 
     local self = {
         Character = Player.Character,
@@ -88,8 +95,8 @@ function ODM.new(ODMRig)
 
         Rig = ODMRig,
         Main = ODMRig.Main,
-        BodyVelocity = BodyVelocity,
-        BodyGyro = BodyGyro,
+        LinearVelocity = LinearVelocity,
+        AlignOrientation = AlignOrientation,
 
         DepthOfField = Lighting:FindFirstChild("DepthOfField"),
 
@@ -171,6 +178,7 @@ function ODM:Initialize()
     self.Humanoid.CameraOffset = CAMERA_OFFSET
     self.Humanoid.WalkSpeed = WALK_SPEED
 
+	--// Wanted to avoid using an update loop, but it's not really possible
     RunService:BindToRenderStep("ODMUpdate", Enum.RenderPriority.Camera.Value - 1, function(dt)
         self:_update(dt)
     end)
@@ -179,14 +187,14 @@ end
 function ODM:InitializeControls()
     local ToggleID = self._inputManager.ToggleID
 
-    self._inputManager:BindActionToMethod("Sprint", "Sprint", {ToggleID})
-    self._inputManager:BindActionToMethod("Boost", "Boost", {ToggleID})
+    self._inputManager:BindActionToMethod("Sprint")
+    self._inputManager:BindActionToMethod("Boost")
+    self._inputManager:BindActionToMethod("Equip")
+    self._inputManager:BindActionToMethod("Hold")
+    self._inputManager:BindActionToMethod("DriftLeft", "Drift", EmbeddedIf(-1, 1))
+    self._inputManager:BindActionToMethod("DriftRight", "Drift", EmbeddedIf(1, -1))
     self._inputManager:BindActionToMethod("HookLeft", "Hook", {"Left", ToggleID})
     self._inputManager:BindActionToMethod("HookRight", "Hook", {"Right", ToggleID})
-    self._inputManager:BindActionToMethod("DriftLeft", "Drift", {EmbeddedIf(-1, 1)})
-    self._inputManager:BindActionToMethod("DriftRight", "Drift", {EmbeddedIf(1, -1)})
-    self._inputManager:BindActionToMethod("Equip", "Equip", {ToggleID})
-    self._inputManager:BindActionToMethod("Hold", "Hold", {ToggleID})
 end
 
 function ODM:Hold(Toggle)
@@ -333,7 +341,7 @@ function ODM:Hook(Hook, Target)
         return
     end
 
-    local HookPosition = self:_getHookTarget()
+    local HookPosition, HookParent = self:_getHookTarget()
 
     self._hookPositions[Hook] = HookPosition
 
@@ -349,11 +357,7 @@ function ODM:Hook(Hook, Target)
     self:Boost(false)
     self:_boostEffect(false)
 
-    if not (self._hookTargets.Left or self._hookTargets.Right) then
-        --self.BodyVelocity.MaxForce = Vector3.zero
-    end
-
-    local ActualHook = self:_createHookFX(Hook, HookPosition)
+    local ActualHook = self:_createHookFX(Hook, HookParent, HookPosition)
     local Interuptted = false
 
     task.spawn(function()
@@ -369,7 +373,6 @@ function ODM:Hook(Hook, Target)
 
     task.delay(HOOK_LENGTH, function()
         if Interuptted then
-            print("int")
             return
         end
 
@@ -423,8 +426,8 @@ function ODM:_applyPhysics(dt)
         return
     end
 
-    local BodyVelocity = self.BodyVelocity
-    local BodyGyro = self.BodyGyro
+    local LinearVelocity = self.LinearVelocity
+    local AlignOrientation = self.AlignOrientation
 
     self.Humanoid.PlatformStand = true
 
@@ -445,13 +448,13 @@ function ODM:_applyPhysics(dt)
     self.Equipment.Gas = math.max(self.Equipment.Gas - GasDecrement, 0)
     self.GasChanged:Fire()
 
-    BodyVelocity.MaxForce = Physics.BV.MaxForce
-    BodyVelocity.Velocity = Physics.BV.Velocity
+    LinearVelocity.MaxForce = Physics.LV.MaxForce
+    LinearVelocity.VectorVelocity = Physics.LV.Velocity
 
-    BodyGyro.MaxTorque = Physics.BG.MaxTorque
-    BodyGyro.CFrame = Physics.BG.CFrame
+	AlignOrientation.MaxTorque = 10000000000
+    AlignOrientation.CFrame = Physics.AO.CFrame
 
-    self.Properties.Speed = BodyVelocity.Velocity.Magnitude
+    self.Properties.Speed = LinearVelocity.VectorVelocity.Magnitude
 end
 
 function ODM:_calculatePhysics()
@@ -491,31 +494,30 @@ function ODM:_calculatePhysics()
     local Cross = Direction:Cross(Vector3.yAxis)
     local Matrix = CFrame.fromMatrix(RootP, Cross, Cross:Cross(Direction))
 
-    local BodyVelocity = self.BodyVelocity
+    local LinearVelocity = self.LinearVelocity
 
-    local MaxForce = BodyVelocity.MaxForce:Lerp(MAX_BV_FORCE, .1)
+    local MaxForce = Lerp(LinearVelocity.MaxForce, MAX_BV_FORCE, .1)
     local Velocity
 
-    if BodyVelocity.Velocity.Unit:Dot(Direction) >= .85 then
+    if LinearVelocity.VectorVelocity.Unit:Dot(Direction) >= .85 then
         Speed *= STRAIGHT_LINE_SPEED_MULT
     end
 
     if self.DriftDirection == 0 then
-        Velocity = BodyVelocity.Velocity:Lerp(Direction * Speed, Multiplier)
+        Velocity = LinearVelocity.VectorVelocity:Lerp(Direction * Speed, Multiplier)
     else
         Velocity = self:_calculateDriftingVelocity(
-            BodyVelocity.Velocity, Matrix, TargetPosition, Distance, Speed, Multiplier
+            LinearVelocity.VectorVelocity, Matrix, TargetPosition, Distance, Speed, Multiplier
         )
     end
 
     return {
-        BV = {
+        LV = {
             MaxForce = MaxForce,
             Velocity = Velocity
         },
 
-        BG = {
-            MaxTorque = MAX_BG_TORQUE,
+        AO = {
             CFrame = Matrix
         },
     }
@@ -537,8 +539,8 @@ function ODM:_update(dt)
     local ProjectedDT = dt * 60
     local NoHooks = not (self._hookPositions.Left or self._hookPositions.Right)
 
-    local NormalizedRelative = self.Root.Velocity.Magnitude / (self.Properties.MaxSpeed * 3)
-    local TiltSpeed = if NoHooks then 0 else self.BodyVelocity.Velocity.Magnitude / (self.Properties.MaxSpeed * 2)
+    local NormalizedRelative = self.Root.AssemblyLinearVelocity.Magnitude / (self.Properties.MaxSpeed * 3)
+    local TiltSpeed = if NoHooks then 0 else self.LinearVelocity.VectorVelocity.Magnitude / (self.Properties.MaxSpeed * 2)
 
     local TargetFOV = math.min(math.floor(70 + 30 * NormalizedRelative), 110)
     local TiltTarget = self.DriftDirection * TILT_MULT
@@ -548,13 +550,13 @@ function ODM:_update(dt)
         self.DepthOfField.FarIntensity = Lerp(0, 0.2, NormalizedRelative)
     end
 
-    self._targetTilt = Tilt
-    self._cameraController:UpdateTilt(self._targetTilt)
+    self._cameraController:UpdateTilt(Tilt)
 
     if NoHooks then
-        self.BodyVelocity.MaxForce = self.BodyVelocity.MaxForce:Lerp(Vector3.zero, 0.1 * ProjectedDT)
-        self.BodyVelocity.Velocity = self.BodyVelocity.Velocity:Lerp(Vector3.zero, 0.025 * ProjectedDT)
-        self.BodyGyro.MaxTorque = Vector3.zero
+		local LerpDelta = 0.025 * ProjectedDT
+        self.LinearVelocity.MaxForce = Lerp(self.LinearVelocity.MaxForce, 0, LerpDelta)
+        self.LinearVelocity.VectorVelocity = self.LinearVelocity.VectorVelocity:Lerp(Vector3.zero, LerpDelta)
+        self.AlignOrientation.MaxTorque = 0
         self.Humanoid.PlatformStand = false
     end
 
@@ -592,7 +594,7 @@ function ODM:_calculateDriftingVelocity(BaseVelocity, Matrix, Target, Distance, 
     )
 end
 
-function ODM:_createHookFX(Identifier, Destination)
+function ODM:_createHookFX(Identifier, HitPart, Destination)
     self:_cleanupHookFX(Identifier)
 
     local OriginA = self.Main:FindFirstChild(Identifier .. "Hook")
@@ -600,8 +602,8 @@ function ODM:_createHookFX(Identifier, Destination)
 
     local DestinationA = self:_createAttachment(Identifier)
 
-    self:_configureAttachment(DestinationA, workspace.Terrain, Destination)
-    self._odmService:RequestODMEffect(true, Identifier, Destination)
+    self:_configureAttachment(DestinationA, HitPart, Destination)
+    self._odmService:RequestODMEffect(true, Identifier, HitPart, Destination)
 
     Wire.Attachment0 = OriginA
     Wire.Attachment1 = DestinationA
@@ -720,6 +722,16 @@ function ODM:_getMouseTarget()
     local Mouse = Player:GetMouse()
     Mouse.TargetFilter = Player.Character
 
+	local Filter = {workspace.Map}
+
+    for _, Entity in ipairs(workspace.Entities.Hitboxes:GetChildren()) do
+        if Entity.Link.Value ~= Player.Character then
+            table.insert(Filter, Entity)
+        end
+    end
+
+	RAY_PARAMS.FilterDescendantsInstances = Filter
+
     local ScreenRay = workspace.CurrentCamera:ScreenPointToRay(Mouse.X, Mouse.Y)
     return workspace:Raycast(ScreenRay.Origin, ScreenRay.Direction.Unit * 1000, RAY_PARAMS)
 end
@@ -736,21 +748,29 @@ function ODM:_getHookTarget()
     local Direction = (TargetResult.Position - Origin).Unit * self.Properties.HookRange
     local Result = workspace:Raycast(Origin, Direction, RAY_PARAMS)
 
-    return if Result then Result.Position else nil
+    if Result then
+        return Result.Position, Result.Instance
+    end
 end
 
 function ODM:Destroy()
     self._inputManager:Destroy()
+
     self.Rig:Destroy()
     self.GasChanged:Destroy()
 
     RunService:UnbindFromRenderStep("ODMUpdate")
 
+    if self._connection then
+        self._connection:Disconnect()
+        self._connection = nil
+    end
+
     self:_cleanupHookFX("Left")
     self:_cleanupHookFX("Right")
 
-    self.BodyVelocity:Destroy()
-    self.BodyGyro:Destroy()
+    self.LinearVelocity:Destroy()
+    self.AlignOrientation:Destroy()
 
     if self.Humanoid then
         self.Humanoid.PlatformStand = false

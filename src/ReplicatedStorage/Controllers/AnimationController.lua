@@ -73,12 +73,17 @@ function AnimationController:IsPlaying(Animation: string)
     return Track.IsPlaying == true
 end
 
-function AnimationController:ClearBadCache()
+function AnimationController:ClearCache()
     for Key, Value in pairs(self._cache) do
-        if not Key and Value then
-            Value = nil
-        end
+        Value:Destroy()
+		self._cache[Key] = nil
     end
+end
+
+function AnimationController:KnitStart()
+	Players.LocalPlayer.CharacterAdded:Connect(function()
+		self:ClearCache()
+	end)
 end
 
 return AnimationController

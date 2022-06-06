@@ -16,7 +16,7 @@ local ODMService = Knit.CreateService({
 
     _odms = {},
     _blades = {},
-    _bladeCount = {},
+    _bladeCount = {}
 })
 
 function ODMService.Client:RequestHoldHandles(Client: Player)

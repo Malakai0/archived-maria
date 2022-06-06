@@ -43,7 +43,7 @@ function GuiController:GetGuis(Name, Table)
     return List
 end
 
-function GuiController:Observe(Name, Function)
+function GuiController:Observe(Name)
     if not self._observers[Name] then
         self._observers[Name] = {}
     end
@@ -60,13 +60,30 @@ function GuiController:Observe(Name, Function)
         GuiSignal = nil
     end)
 
-    GuiObserver:Connect(Function)
-
     table.insert(self._observers[Name], GuiObserver)
+	self.Trove:Add(GuiObserver)
 
     for _, GuiObject in pairs(self:GetGuis(Name)) do
         GuiObserver.Signal:Fire(GuiObject)
     end
+
+	return setmetatable({
+		Connect = function(_, Callback)
+			GuiSignal:Connect(Callback)
+
+			for _, GuiObject in pairs(self:GetGuis(Name)) do
+				GuiObserver.Signal:Fire(GuiObject)
+			end
+		end,
+
+		ConnectOnce = function(_, Callback)
+			GuiSignal:ConnectOnce(Callback)
+
+			for _, GuiObject in pairs(self:GetGuis(Name)) do
+				GuiObserver.Signal:Fire(GuiObject)
+			end
+		end,
+	}, {__index = GuiSignal})
 end
 
 function GuiController:TryObserve(GuiObject)
@@ -80,9 +97,7 @@ function GuiController:TryObserve(GuiObject)
 
     if GuiObserverList then
         for _, GuiObserver in pairs(GuiObserverList) do
-            task.spawn(function()
-                GuiObserver.Signal:Fire(GuiObject)
-            end)
+            GuiObserver.Signal:Fire(GuiObject)
         end
     end
 end
@@ -121,6 +136,7 @@ function GuiController:ProcessGui()
     local CurrentGui = Player:WaitForChild("PlayerGui")
     CurrentGui:WaitForChild("Main")
 
+	self._observed = {}
     self._guis = self:Serialize(CurrentGui)
 
     self.Trove:Add(CurrentGui.DescendantAdded:Connect(function()
@@ -140,7 +156,7 @@ function GuiController:DisconnectEvent(ID)
 end
 
 function GuiController:AddConnection(Key, Event, Function)
-    local ID = HttpService:GenerateGuiD(false)
+    local ID = HttpService:GenerateGUID(false)
 
     self._savedConnections[ID] = {Key, Event, Function}
 

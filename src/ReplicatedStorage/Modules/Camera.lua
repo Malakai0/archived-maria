@@ -112,7 +112,7 @@ function Camera.Update(Cam, Character, Delta)
 
         X.Angle = math.clamp(X.Angle - Y.Delta / 180, Camera.Min, Camera.Max)
         Y.Angle = Y.Angle - X.Delta / 180
-        Z.Angle = Camera.Maths.Lerp(Z.Angle, 0, math.min(Delta * 60 * 10, 0.8))
+        Z.Angle = Camera.Maths.Lerp(Z.Angle, 0, (Delta * 60) * .4)
 
         Cam.CFrame = Cam.CFrame:Lerp(
             CFrame.new(Position) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Camera.Offset,

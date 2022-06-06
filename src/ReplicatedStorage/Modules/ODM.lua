@@ -755,8 +755,8 @@ end
 
 function ODM:Destroy()
     self._inputManager:Destroy()
+	self._odmService:RequestDestroyODM()
 
-    self.Rig:Destroy()
     self.GasChanged:Destroy()
 
     RunService:UnbindFromRenderStep("ODMUpdate")

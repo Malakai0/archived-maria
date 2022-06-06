@@ -25,42 +25,20 @@ local ODMService = Knit.CreateService({
     _hooks = {Left = {}, Right = {}},
 })
 
-function ODMService.Client:RequestHoldHandles(Client: Player)
-    local CurrentODM = self.Server._odms[Client]
+function ODMService.Client:RequestDestroyODM(Client: Player)
+	local CurrentODM = self.Server._odms[Client]
 
-    if not CurrentODM then
-        return
-    end
+	if not (CurrentODM and CurrentODM.Parent) then
+		return
+	end
 
-    local Character = Client.Character
+	CurrentODM:Destroy()
 
-    local LeftArm, RightArm = Character:FindFirstChild("Left Arm"), Character:FindFirstChild("Right Arm")
+	self:DestroyBlades(Client)
 
-    if not (LeftArm and RightArm) then
-        return
-    end
-
-    RigHelper.WeldHandleToArm("Left", CurrentODM, LeftArm)
-    RigHelper.WeldHandleToArm("Right", CurrentODM, RightArm)
-end
-
-function ODMService.Client:RequestStopHoldingHandles(Client: Player)
-    local CurrentODM = self.Server._odms[Client]
-
-    if not CurrentODM then
-        return
-    end
-
-    local Character = Client.Character
-
-    local LeftArm, RightArm = Character:FindFirstChild("Left Arm"), Character:FindFirstChild("Right Arm")
-
-    if not (LeftArm and RightArm) then
-        return
-    end
-
-    RigHelper.WeldHandleToRig("Left", CurrentODM, LeftArm)
-    RigHelper.WeldHandleToRig("Right", CurrentODM, RightArm)
+	self.Server._odms[Client] = nil
+	self.Server._hooks.Left[Client] = nil
+	self.Server._hooks.Right[Client] = nil
 end
 
 function ODMService.Client:RequestODM(Client: Player)
@@ -88,6 +66,8 @@ function ODMService.Client:RequestODM(Client: Player)
     RigHelper.WeldToCharacter(Rig, Character)
 
     Rig.Parent = Root
+
+	self.Server._bladeCount[Client] = BLADES_PER_SIDE
     self.Server._odms[Client] = Rig
 
     return Rig
@@ -172,16 +152,42 @@ function ODMService:GetHandleForBlade(Client: Player, Blade: BasePart)
     return CurrentODM.Handles:FindFirstChild(BladeSide)
 end
 
-function ODMService:ClientSpawned(Client: Player)
-    self._bladeCount[Client] = BLADES_PER_SIDE
+function ODMService.Client:RequestHoldHandles(Client: Player)
+    local CurrentODM = self.Server._odms[Client]
+
+    if not CurrentODM then
+        return
+    end
+
+    local Character = Client.Character
+
+    local LeftArm, RightArm = Character:FindFirstChild("Left Arm"), Character:FindFirstChild("Right Arm")
+
+    if not (LeftArm and RightArm) then
+        return
+    end
+
+    RigHelper.WeldHandleToArm("Left", CurrentODM, LeftArm)
+    RigHelper.WeldHandleToArm("Right", CurrentODM, RightArm)
 end
 
-function ODMService:ClientLeaving(Client: Player)
-    self._bladeCount[Client] = nil
-    self._odms[Client] = nil
-    self._blades[Client] = nil
-    self._hooks.Left[Client] = nil
-    self._hooks.Right[Client] = nil
+function ODMService.Client:RequestStopHoldingHandles(Client: Player)
+    local CurrentODM = self.Server._odms[Client]
+
+    if not CurrentODM then
+        return
+    end
+
+    local Character = Client.Character
+
+    local LeftArm, RightArm = Character:FindFirstChild("Left Arm"), Character:FindFirstChild("Right Arm")
+
+    if not (LeftArm and RightArm) then
+        return
+    end
+
+    RigHelper.WeldHandleToRig("Left", CurrentODM, LeftArm)
+    RigHelper.WeldHandleToRig("Right", CurrentODM, RightArm)
 end
 
 function ODMService.Client:RequestODMEffect(Client: Player, Type: boolean, Identifier: string, Part: BasePart, Destination: Vector3)
@@ -223,6 +229,18 @@ function ODMService.Client:RequestODMEffect(Client: Player, Type: boolean, Ident
             self.ODMEffectRequested:Fire(Target, Type, Part, Wire, Attachment, Destination)
         end
     end
+end
+
+function ODMService:ClientSpawned(Client: Player)
+    self._bladeCount[Client] = BLADES_PER_SIDE
+end
+
+function ODMService:ClientLeaving(Client: Player)
+    self._bladeCount[Client] = nil
+    self._odms[Client] = nil
+    self._blades[Client] = nil
+    self._hooks.Left[Client] = nil
+    self._hooks.Right[Client] = nil
 end
 
 function ODMService:SolveHitboxExtension(Velocity: Vector3)

@@ -4,9 +4,9 @@ local RigHelper = {}
 function RigHelper.WeldToCharacter(Rig, Character)
     local Weld = Instance.new("Motor6D")
 
-    Weld.Part0 = Character.HumanoidRootPart
+    Weld.Part0 = Character.Torso
     Weld.Part1 = Rig.PrimaryPart
-    Weld.Parent = Character.HumanoidRootPart
+    Weld.Parent = Character.Torso
 
     return Weld
 end

@@ -131,9 +131,13 @@ function InputManager:SetObject(Object)
 end
 
 function InputManager:BindActionToMethod(Identifier, Method, Args)
+	if not (Method and Args) then
+		Method = Identifier
+	end
+
     table.insert(self._objectCallbacks[Identifier], {
         Method,
-        Args,
+        if not Args then {self.ToggleID} elseif type(Args) ~= "table" then {Args} else Args,
     })
 end
 

@@ -16,14 +16,14 @@ function CameraController:Update(dt)
     Camera.Update(workspace.CurrentCamera, Players.LocalPlayer.Character, dt)
 end
 
-function CameraController:UpdateDirection(Direction)
+function CameraController:UpdateTilt(Direction)
     Camera.UpdateTilt(Delta, Direction * 2)
 end
 
 function CameraController:KnitStart()
     Camera.Setup(Players.LocalPlayer:GetMouse())
 
-    RunService:BindToRenderStep("CameraController", Enum.RenderPriority.Camera.Value, function(dt)
+    RunService:BindToRenderStep("CameraController", Enum.RenderPriority.Camera.Value - 1, function(dt)
         Delta = dt
         self:Update(dt)
     end)

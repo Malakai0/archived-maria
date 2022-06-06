@@ -17,7 +17,7 @@ local function UpdateGas(GUI, ODM)
     FillBar:TweenSize(UDim2.fromScale(Percentile, 1), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.5)
 end
 
-local function GasSystem()
+local function GasGUISystem()
     local ODMController = Knit.GetController("ODMController")
     local GuiController = Knit.GetController("GuiController")
 
@@ -26,15 +26,17 @@ local function GasSystem()
         GasGUI = GUI
     end)
 
-    RunService:BindToRenderStep("GasSystem", Enum.RenderPriority.First.Value, function()
-        local ODM = ODMController:GetODM()
-
-        if not (ODM and GasGUI) then
+    ODMController.ODMChanged:Connect(function(ODM)
+        if not (GasGUI and ODM) then
             return
         end
 
         UpdateGas(GasGUI, ODM)
+
+        ODM.GasChanged:Connect(function()
+            UpdateGas(GasGUI, ODM)
+        end)
     end)
 end
 
-return GasSystem
+return GasGUISystem

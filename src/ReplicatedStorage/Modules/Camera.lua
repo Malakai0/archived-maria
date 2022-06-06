@@ -1,7 +1,8 @@
 local UserInputService = game:GetService("UserInputService")
 
 local PI = math.pi
-local OFFSET = Vector3.new(1.5, 2, 0)
+local OFFSET = Vector3.new(0, 2, 0)
+local TILT_FPS = 1 / 30
 
 local Camera = {
 	X = {
@@ -27,7 +28,7 @@ local Camera = {
 	Max = 5 * PI / 20,
 	Maths = {
 		Lerp = function(a, b, x)
-			return a / 2 + (b - a) * x
+			return (1 - x) * a + x * b
 		end
 	},
 	Check = function(value, err)
@@ -111,9 +112,12 @@ function Camera.Update(Cam, Character, Delta)
 
         X.Angle = math.clamp(X.Angle - Y.Delta / 180, Camera.Min, Camera.Max)
         Y.Angle = Y.Angle - X.Delta / 180
-        Z.Angle = Camera.Maths.Lerp(Z.Angle, 0, math.min(Delta * 10, 0.8))
+        Z.Angle = Camera.Maths.Lerp(Z.Angle, 0, (Delta * 60) * .4)
 
-        Cam.CFrame = Cam.CFrame:Lerp(CFrame.new(Position) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Camera.Offset, 0.25)
+        Cam.CFrame = Cam.CFrame:Lerp(
+            CFrame.new(Position) * CFrame.Angles(0, Y.Angle, 0) * CFrame.Angles(X.Angle, 0, 0) * CFrame.Angles(0, 0, Z.Angle + Camera.Tilt) * Camera.Offset,
+            0.25 * (Delta * 60)
+        )
 
         X.Delta = 0
         Y.Delta = 0
@@ -121,7 +125,7 @@ function Camera.Update(Cam, Character, Delta)
 end
 
 function Camera.UpdateTilt(Delta, Tilt)
-	Camera.Tilt = Camera.Maths.Lerp(Camera.Tilt, Tilt, math.min(Delta * 3, 1))
+	Camera.Tilt = Camera.Maths.Lerp(Camera.Tilt, Tilt, TILT_FPS * Delta * 60)
 end
 
 return Camera

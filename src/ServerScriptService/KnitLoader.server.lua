@@ -5,6 +5,8 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 Knit.AddServices(ServerStorage.Source.Services)
 
-Knit.Start():andThen(function()
-    print("Server started")
-end):catch(warn)
+Knit.Start()
+	:andThen(function()
+		print("Server started")
+	end)
+	:catch(warn)

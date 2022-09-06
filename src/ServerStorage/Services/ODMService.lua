@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local Debris = game:GetService("Debris")
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BLADES_PER_SIDE = 4

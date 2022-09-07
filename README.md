@@ -1,3 +1,3 @@
 # Project Maria
 
-Project Maria is more of an engine than a game for the Roblox platform, heavily inspired and based on the anime Attack on Titan.
+Project Maria is a side project thing for the Roblox platform, heavily inspired and based on the anime Attack on Titan.

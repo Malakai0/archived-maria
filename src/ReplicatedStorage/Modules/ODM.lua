@@ -141,6 +141,7 @@ function ODM.new(ODMRig)
 
 		_odmService = Knit.GetService("ODMService"),
 		_animations = Knit.GetController("AnimationController"),
+		_sounds = Knit.GetController("SoundController"),
 		_cameraController = Knit.GetController("CameraController"),
 	}
 
@@ -150,6 +151,11 @@ function ODM.new(ODMRig)
 	for _, Animation in pairs(ReplicatedStorage.Animations:GetChildren()) do
 		table.insert(IDs, Animation.AnimationId)
 		self._animations:LoadToCache(Animation.Name)
+	end
+
+	for _, Sound in ReplicatedStorage.Sounds:GetChildren() do
+		table.insert(IDs, Sound.SoundId)
+		self._sounds:AddSound(Sound.Name, nil, Sound)
 	end
 
 	ContentProvider:PreloadAsync(IDs)
@@ -568,6 +574,9 @@ function ODM:_update(dt)
 		self.LinearVelocity.VectorVelocity = self.LinearVelocity.VectorVelocity:Lerp(Vector3.zero, LerpDelta)
 		self.AlignOrientation.MaxTorque = 0
 		self.Humanoid.PlatformStand = false
+		self._sounds:StopSound("GasEmission")
+	elseif self.Boosting then
+		self._sounds:PlaySound("GasEmission")
 	end
 
 	if self._targetFOV ~= TargetFOV then

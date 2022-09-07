@@ -31,7 +31,10 @@ function GuiController:GetGuis(Name, Table)
 	for Key, Value in pairs(Table) do
 		if Key == Name then
 			table.insert(List, Value[1])
-		elseif type(Value[2]) == "table" then
+			continue
+		end
+
+		if type(Value[2]) == "table" then
 			local GuiObjects = self:GetGuis(Name, Value[2])
 			if GuiObjects then
 				for _, GuiObject in pairs(GuiObjects) do

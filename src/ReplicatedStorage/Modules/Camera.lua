@@ -39,7 +39,7 @@ local Camera = {
 }
 
 local function Zoom(Direction)
-	local NewValue = Camera.Z.Current + (if Direction == "In" then -1 else 1)
+	local NewValue = Camera.Z.Current + Direction
 	Camera.Z.Current = math.clamp(NewValue, Camera.Z.Min, Camera.Z.Max)
 
 	Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Camera.Z.Current)
@@ -49,14 +49,14 @@ function Camera.Setup(Mouse)
 	local X, Y, Z = Camera.X, Camera.Y, Camera.Z
 
 	Mouse.WheelForward:Connect(function()
-		Zoom("In")
+		Zoom(-1)
 	end)
 
 	Mouse.WheelBackward:Connect(function()
-		Zoom("Out")
+		Zoom(1)
 	end)
 
-	Zoom("Out")
+	Zoom(1)
 
 	UserInputService.InputChanged:Connect(function(Input)
 		if Input.UserInputType ~= Enum.UserInputType.MouseMovement then
@@ -69,7 +69,7 @@ function Camera.Setup(Mouse)
 		Y.Delta = Input.Delta.Y
 		Z.Angle = Camera.Maths.Lerp(Z.Angle, Z.Angle + DeltaX / 5000 * 0.4, 0.1)
 
-		Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Z.Current)
+		--Camera.Offset = CFrame.new(Camera.Offset.Position.X, Camera.Offset.Position.Y, Z.Current)
 	end)
 
 	local State = 1
@@ -112,7 +112,7 @@ function Camera.Update(Cam, Character, Delta)
 
 		X.Angle = math.clamp(X.Angle - Y.Delta / 180, Camera.Min, Camera.Max)
 		Y.Angle = Y.Angle - X.Delta / 180
-		Z.Angle = Camera.Maths.Lerp(Z.Angle, 0, (Delta * 60) * 0.4)
+		Z.Angle = Camera.Maths.Lerp(Z.Angle, 0, (Delta * 60) * 0.7)
 
 		Cam.CFrame = Cam.CFrame:Lerp(
 			CFrame.new(Position)
@@ -120,7 +120,7 @@ function Camera.Update(Cam, Character, Delta)
 				* CFrame.Angles(X.Angle, 0, 0)
 				* CFrame.Angles(0, 0, Z.Angle + Camera.Tilt)
 				* Camera.Offset,
-			0.25 * (Delta * 60)
+			Delta * 60 * 0.3
 		)
 
 		X.Delta = 0

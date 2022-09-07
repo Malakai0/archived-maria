@@ -8,8 +8,8 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local RigHelper = require(ReplicatedStorage.Source.Modules.Helper.RigHelper)
 
-local RigPrefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Malakai Gear")
-local LeftBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Blue Blade")
+local RigPrefab = ReplicatedStorage.Objects.ODM:FindFirstChild("Murica Gear")
+local LeftBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Red Blade")
 local RightBladePrefab = ReplicatedStorage.Objects.Blades:FindFirstChild("Blue Blade")
 
 local ODMService = Knit.CreateService({
@@ -21,6 +21,8 @@ local ODMService = Knit.CreateService({
 	_odms = {},
 	_blades = {},
 	_bladeCount = {},
+	_tweens = {},
+	_sprinting = {},
 	_hooks = { Left = {}, Right = {} },
 })
 
@@ -38,6 +40,37 @@ function ODMService.Client:RequestDestroyODM(Client: Player)
 	self.Server._odms[Client] = nil
 	self.Server._hooks.Left[Client] = nil
 	self.Server._hooks.Right[Client] = nil
+end
+
+function ODMService.Client:RequestSprinting(Client: Player, Value: boolean)
+	local CurrentODM = self.Server._odms[Client]
+
+	if not (CurrentODM and CurrentODM.Parent) then
+		return
+	end
+
+	if self.Server._sprinting[Client] == Value then
+		return
+	end
+
+	self.Server._sprinting[Client] = Value
+
+	local leftArm, rightArm = Client.Character:FindFirstChild("Left Arm"), Client.Character:FindFirstChild("Right Arm")
+
+	self.Server._tweens[Client] = self.Server._tweens[Client] or {}
+
+	local tweens = self.Server._tweens[Client]
+
+	if tweens.Left then
+		tweens.Left:Cancel()
+	end
+
+	if tweens.Right then
+		tweens.Right:Cancel()
+	end
+
+	tweens.Left = RigHelper.RotateHandle(leftArm, Value)
+	tweens.Right = RigHelper.RotateHandle(rightArm, Value)
 end
 
 function ODMService.Client:RequestODM(Client: Player)
@@ -280,12 +313,12 @@ end
 
 function ODMService:KnitInit()
 	Players.PlayerAdded:Connect(function(Client: Player)
-		local FirstCharacter = Client.Character or Client.CharacterAdded:Wait()
+		local _ = Client.Character or Client.CharacterAdded:Wait()
 
-		self:ClientSpawned(Client, FirstCharacter)
+		self:ClientSpawned(Client)
 
-		Client.CharacterAdded:Connect(function(Character: Model)
-			self:ClientSpawned(Client, Character)
+		Client.CharacterAdded:Connect(function()
+			self:ClientSpawned(Client)
 		end)
 	end)
 

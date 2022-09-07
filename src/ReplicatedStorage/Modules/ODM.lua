@@ -259,6 +259,13 @@ end
 
 function ODM:Sprint(Target)
 	self.Sprinting = Target
+
+	self.Character.Torso:SetAttribute("Sprinting", Target)
+	local currentSpeed = self.Root.AssemblyLinearVelocity.Magnitude
+
+	if currentSpeed > 5 then
+		self._odmService:RequestSprinting(Target)
+	end
 end
 
 function ODM:Drift(DirectionOffset)
@@ -588,6 +595,10 @@ function ODM:_update(dt)
 
 	local WalkSpeedTarget = if self.Sprinting then RUN_SPEED else WALK_SPEED
 	self.Humanoid.WalkSpeed = Lerp(self.Humanoid.WalkSpeed, WalkSpeedTarget, 6 * dt)
+
+	if self.Root.AssemblyLinearVelocity.Magnitude > 5 then
+		self._odmService:RequestSprinting(self.Sprinting)
+	end
 
 	if self.Boosting then
 		local RX = self._rng:NextNumber(-CAMERA_SHAKE_OFFSET, CAMERA_SHAKE_OFFSET)

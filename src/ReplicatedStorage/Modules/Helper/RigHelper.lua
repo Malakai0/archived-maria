@@ -1,3 +1,4 @@
+local TweenService = game:GetService("TweenService")
 local RigHelper = {}
 
 function RigHelper.WeldToCharacter(Rig, Character)
@@ -29,6 +30,19 @@ function RigHelper.WeldHandleToArm(Side, MainRig, Arm)
 	Weld.Parent = Arm
 
 	return Weld
+end
+
+function RigHelper.RotateHandle(arm, isSprinting)
+	local weld = arm:FindFirstChild("HandleWeld")
+
+	local tween = TweenService:Create(weld, TweenInfo.new(0.25), {
+		C0 = CFrame.new(0, if isSprinting then -0.75 else -1, 0)
+			* CFrame.Angles(isSprinting and math.rad(-90) or 0, 0, 0),
+	})
+
+	tween:Play()
+
+	return tween
 end
 
 function RigHelper.WeldHandleToRig(Side, MainRig, Arm)
